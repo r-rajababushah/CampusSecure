@@ -35,6 +35,8 @@ def init_sqlite_db(force: bool = False):
         cursor.execute("DROP TABLE IF EXISTS student_enrollments")
         cursor.execute("DROP TABLE IF EXISTS student_attendance")
         cursor.execute("DROP TABLE IF EXISTS student_grades")
+        cursor.execute("DROP TABLE IF EXISTS attendance_tamper_logs")
+        cursor.execute("DROP TABLE IF EXISTS auth_session_logs")
 
     cursor.executescript("""
         CREATE TABLE IF NOT EXISTS users_auth (
@@ -97,6 +99,33 @@ def init_sqlite_db(force: bool = False):
             finalScore REAL NOT NULL,
             totalMarks REAL NOT NULL,
             letterGrade TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS attendance_tamper_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            recordId TEXT NOT NULL,
+            studentId TEXT NOT NULL,
+            sessionId TEXT NOT NULL,
+            originalStatus TEXT,
+            tamperedStatus TEXT,
+            detectedAt TEXT NOT NULL,
+            detectedBy TEXT,
+            clientIp TEXT,
+            severity TEXT DEFAULT 'CRITICAL',
+            notes TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS auth_session_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            sessionId TEXT NOT NULL,
+            userId TEXT NOT NULL,
+            userEmail TEXT NOT NULL,
+            userRole TEXT NOT NULL,
+            loginAt TEXT NOT NULL,
+            clientIp TEXT,
+            userAgent TEXT,
+            authMethod TEXT,
+            status TEXT
         );
     """)
 
