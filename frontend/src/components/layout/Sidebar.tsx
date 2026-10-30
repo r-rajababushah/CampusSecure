@@ -11,6 +11,7 @@ import {
   X,
   Lock,
   Database,
+  Layers,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -52,6 +53,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
       label: 'Projects & Secure Chat',
       icon: FolderKanban,
       roles: ['admin', 'faculty', 'student'],
+    },
+    {
+      id: 'architecture',
+      label: 'Architecture Flow',
+      icon: Layers,
+      roles: ['admin', 'faculty', 'student'],
+      highlight: true,
     },
     {
       id: 'users',

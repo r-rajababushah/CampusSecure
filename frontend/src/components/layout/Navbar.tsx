@@ -15,6 +15,7 @@ import {
   ChevronDown,
   Menu,
   RotateCcw,
+  Layers,
 } from 'lucide-react';
 
 interface NavbarProps {
@@ -95,6 +96,20 @@ export const Navbar: React.FC<NavbarProps> = ({ onToggleSidebar, setActiveTab })
       </div>
 
       <div className="flex items-center gap-2 sm:gap-3">
+        {/* Interactive Architecture Flow View Button */}
+        <button
+          onClick={() => setActiveTab('architecture')}
+          className={`flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-xs font-semibold transition border ${
+            activeTab === 'architecture'
+              ? 'border-blue-400 bg-blue-50 text-blue-700 shadow-sm'
+              : 'border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+          }`}
+          title="Open interactive Zero-Trust Architecture Flow"
+        >
+          <Layers className="h-3.5 w-3.5 text-blue-600" />
+          <span className="hidden md:inline">Architecture Flow</span>
+        </button>
+
         {/* ========================================================================= */}
         {/* SECURITY ON / OFF TOGGLE SWITCH (Admin Control & Status Indicator)       */}
         {/* ========================================================================= */}

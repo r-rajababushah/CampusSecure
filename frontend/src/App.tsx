@@ -17,6 +17,7 @@ import { UsersPage } from './features/users/UsersPage.js';
 import { SecurityCenterPage } from './features/security-center/SecurityCenterPage.js';
 import { AuditPage } from './features/audit/AuditPage.js';
 import { SqlInjectionLabPage } from './features/sqli-lab/SqlInjectionLabPage.js';
+import { ArchitectureFlowPage } from './features/architecture/ArchitectureFlowPage.js';
 import { AlertTriangle, ShieldAlert, ShieldCheck } from 'lucide-react';
 
 const VALID_ROUTES = [
@@ -28,6 +29,7 @@ const VALID_ROUTES = [
   'security',
   'audit',
   'sqli-lab',
+  'architecture',
 ];
 
 function getTabFromUrl(): string {
@@ -154,6 +156,7 @@ function MainApp() {
               {effectiveTab === 'security' && (user.role === 'admin' || !isSecure) && <SecurityCenterPage />}
               {effectiveTab === 'audit' && (user.role === 'admin' || !isSecure) && <AuditPage />}
               {effectiveTab === 'sqli-lab' && (user.role !== 'student' || !isSecure) && <SqlInjectionLabPage />}
+              {effectiveTab === 'architecture' && <ArchitectureFlowPage />}
             </div>
           </main>
         </div>
@@ -163,6 +166,15 @@ function MainApp() {
 }
 
 export default function App() {
+  const isFullscreenFlow =
+    typeof window !== 'undefined' &&
+    (window.location.search.includes('view=fullscreen-flow') ||
+      window.location.pathname.startsWith('/architecture-fullscreen'));
+
+  if (isFullscreenFlow) {
+    return <ArchitectureFlowPage isStandalone={true} />;
+  }
+
   return (
     <AuthProvider>
       <SecurityModeProvider>
