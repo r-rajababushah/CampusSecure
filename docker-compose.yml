@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: securecampus-backend
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      - SECURITY_MODE=on
+      - ATTENDANCE_HMAC_SECRET=super_secret_attendance_master_key_99824
+      - SECRET_KEY=securecampus-hackathon-secret-key-2026
+      - CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173,http://frontend:5173
+      - NODE_ENV=development
+    volumes:
+      - ./backend:/app
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: securecampus-frontend
+    ports:
+      - "127.0.0.1:5173:5173"
+    environment:
+      - VITE_API_URL=http://backend:8000
+    depends_on:
+      - backend
+    restart: unless-stopped

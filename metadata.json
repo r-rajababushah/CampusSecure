@@ -1,0 +1,6 @@
+{
+  "name": "SecureCampus",
+  "description": "Secure student management and project collaboration platform for colleges with real-time Security Operations Center, attendance integrity, and RBAC.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
