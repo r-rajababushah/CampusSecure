@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SecureCampus - Security Architecture & Defense Layers</title>
+  <style>
+    :root {
+      --bg: #0b0f19;
+      --card-bg: #111827;
+      --border: #1f2937;
+      --text: #f3f4f6;
+      --text-muted: #9ca3af;
+      --accent: #3b82f6;
+      --accent-glow: rgba(59, 130, 246, 0.2);
+      --success: #10b981;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+      --purple: #8b5cf6;
+      --cyan: #06b6d4;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+      padding: 24px;
+    }
+    header {
+      max-width: 1280px;
+      margin: 0 auto 32px auto;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 20px;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 4px 10px;
+      border-radius: 9999px;
+      background: rgba(16, 185, 129, 0.1);
+      color: var(--success);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+    }
+    .badge.toggle-pill {
+      background: rgba(59, 130, 246, 0.1);
+      color: var(--accent);
+      border-color: rgba(59, 130, 246, 0.3);
+    }
+    .main-grid {
+      max-width: 1280px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: 2fr 1fr;
+      gap: 24px;
+    }
+    @media (max-width: 1024px) {
+      .main-grid { grid-template-columns: 1fr; }
+    }
+    .diagram-container {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 24px;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+    }
+    .layer-card {
+      background: rgba(15, 23, 42, 0.6);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 20px;
+      position: relative;
+      transition: all 0.2s ease;
+    }
+    .layer-card:hover {
+      border-color: var(--accent);
+      box-shadow: 0 0 15px var(--accent-glow);
+    }
+    .layer-card.highlighted {
+      border-color: var(--cyan);
+      box-shadow: 0 0 20px rgba(6, 182, 212, 0.3);
+    }
+    .layer-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+    .layer-title {
+      font-size: 14px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .l-1 { color: #38bdf8; }
+    .l-2 { color: #a78bfa; }
+    .l-3 { color: #f472b6; }
+    .l-4 { color: #fbbf24; }
+    .l-5 { color: #34d399; }
+
+    .node-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      gap: 12px;
+    }
+    .node {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 6px;
+      padding: 12px;
+      cursor: pointer;
+      transition: transform 0.15s ease, border-color 0.15s ease;
+    }
+    .node:hover {
+      transform: translateY(-2px);
+      border-color: #60a5fa;
+    }
+    .node.active {
+      border-color: var(--accent);
+      background: #1e3a8a;
+    }
+    .node-name {
+      font-size: 13px;
+      font-weight: 600;
+      color: #ffffff;
+      margin-bottom: 4px;
+    }
+    .node-sub {
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+    .flow-arrow {
+      text-align: center;
+      color: #475569;
+      font-size: 18px;
+      margin: -10px 0 10px 0;
+      user-select: none;
+    }
+
+    /* Side Panel */
+    .detail-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 24px;
+      position: sticky;
+      top: 24px;
+      height: fit-content;
+    }
+    .detail-tag {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      padding: 2px 8px;
+      border-radius: 4px;
+      background: #374151;
+      display: inline-block;
+      margin-bottom: 12px;
+    }
+    .detail-title {
+      font-size: 18px;
+      font-weight: 700;
+      margin-bottom: 8px;
+      color: #ffffff;
+    }
+    .detail-desc {
+      font-size: 13px;
+      color: #d1d5db;
+      margin-bottom: 16px;
+      line-height: 1.6;
+    }
+    .defense-box {
+      background: #0f172a;
+      border-left: 3px solid var(--accent);
+      padding: 12px;
+      border-radius: 4px;
+      margin-bottom: 12px;
+    }
+    .defense-box h4 {
+      font-size: 12px;
+      color: #93c5fd;
+      margin-bottom: 4px;
+    }
+    .defense-box p {
+      font-size: 12px;
+      color: #94a3b8;
+    }
+    .toggle-state-row {
+      display: flex;
+      gap: 8px;
+      margin-top: 16px;
+    }
+    .state-pill {
+      flex: 1;
+      padding: 8px;
+      border-radius: 6px;
+      font-size: 11px;
+      text-align: center;
+    }
+    .state-on {
+      background: rgba(16, 185, 129, 0.15);
+      border: 1px solid rgba(16, 185, 129, 0.4);
+      color: #34d399;
+    }
+    .state-off {
+      background: rgba(239, 68, 68, 0.15);
+      border: 1px solid rgba(239, 68, 68, 0.4);
+      color: #f87171;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div>
+      <h1 style="font-size: 22px; font-weight: 800; color: #fff;">SecureCampus Defense Model</h1>
+      <p style="font-size: 13px; color: var(--text-muted);">Interactive Multi-Tier Security Layer & Zero-Trust Verification Flow</p>
+    </div>
+    <div style="display: flex; gap: 10px;">
+      <span class="badge">Dynamic Zero-Trust</span>
+      <span class="badge toggle-pill">SECURITY_MODE: ON / OFF</span>
+    </div>
+  </header>
+
+  <div class="main-grid">
+
+    <!-- Architecture Layers Flow -->
+    <div class="diagram-container">
+
+      <!-- Layer 1 -->
+      <div class="layer-card">
+        <div class="layer-header">
+          <div class="layer-title l-1">
+            <span>🛡️ Layer 1</span> Perimeter & Transport Security
+          </div>
+          <span style="font-size: 11px; color: #64748b;">Client ↔ Gateway Boundary</span>
+        </div>
+        <div class="node-grid">
+          <div class="node active" onclick="showDetails('csp')">
+            <div class="node-name">Helmet & CSP</div>
+            <div class="node-sub">Content-Security-Policy</div>
+          </div>
+          <div class="node" onclick="showDetails('cookies')">
+            <div class="node-name">Session Cookies</div>
+            <div class="node-sub">HttpOnly, SameSite, Secure</div>
+          </div>
+          <div class="node" onclick="showDetails('csrf')">
+            <div class="node-name">Anti-CSRF Tokens</div>
+            <div class="node-sub">Double-Submit Cookie Guard</div>
+          </div>
+          <div class="node" onclick="showDetails('cors')">
+            <div class="node-name">CORS Whitelist</div>
+            <div class="node-sub">127.0.0.1 Binding Only</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="flow-arrow">▼ Sanitized Inbound Request</div>
+
+      <!-- Layer 2 -->
+      <div class="layer-card">
+        <div class="layer-header">
+          <div class="layer-title l-2">
+            <span>🔑 Layer 2</span> Identity, Authentication & Rate Limiting
+          </div>
+          <span style="font-size: 11px; color: #64748b;">Authentication Gateway</span>
+        </div>
+        <div class="node-grid">
+          <div class="node" onclick="showDetails('sqli')">
+            <div class="node-name">Parameterized SQL</div>
+            <div class="node-sub">Prepared Statement Engine</div>
+          </div>
+          <div class="node" onclick="showDetails('argon2')">
+            <div class="node-name">Argon2 / Salted Hash</div>
+            <div class="node-sub">High-entropy password store</div>
+          </div>
+          <div class="node" onclick="showDetails('bruteforce')">
+            <div class="node-name">Rate Limiting & Lockout</div>
+            <div class="node-sub">5 failures → 15-min lockout</div>
+          </div>
+          <div class="node" onclick="showDetails('session_rot')">
+            <div class="node-name">Session Rotation</div>
+            <div class="node-sub">Anti-Fixation Regeneration</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="flow-arrow">▼ Authenticated Session Token (32-Byte Entropy)</div>
+
+      <!-- Layer 3 -->
+      <div class="layer-card">
+        <div class="layer-header">
+          <div class="layer-title l-3">
+            <span>🔒 Layer 3</span> Authorization & Access Control (RBAC/BOLA)
+          </div>
+          <span style="font-size: 11px; color: #64748b;">Strict Server-Side Validation</span>
+        </div>
+        <div class="node-grid">
+          <div class="node" onclick="showDetails('rbac')">
+            <div class="node-name">Role-Based Access (RBAC)</div>
+            <div class="node-sub">Admin / Faculty / Student</div>
+          </div>
+          <div class="node" onclick="showDetails('idor')">
+            <div class="node-name">BOLA / IDOR Guard</div>
+            <div class="node-sub">Resource ownership checks</div>
+          </div>
+          <div class="node" onclick="showDetails('schema')">
+            <div class="node-name">Pydantic / Zod Schemas</div>
+            <div class="node-sub">Strict payload type validation</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="flow-arrow">▼ Authorized Domain Operations</div>
+
+      <!-- Layer 4 -->
+      <div class="layer-card">
+        <div class="layer-header">
+          <div class="layer-title l-4">
+            <span>🔐 Layer 4</span> Cryptographic Data & Payload Integrity
+          </div>
+          <span style="font-size: 11px; color: #64748b;">Zero-Knowledge Cryptography</span>
+        </div>
+        <div class="node-grid">
+          <div class="node" onclick="showDetails('hmac')">
+            <div class="node-name">HMAC-SHA256 Seals</div>
+            <div class="node-sub">Canonical attendance verify</div>
+          </div>
+          <div class="node" onclick="showDetails('rsa_aes')">
+            <div class="node-name">Hybrid RSA + AES-256</div>
+            <div class="node-sub">E2E Chat payload encryption</div>
+          </div>
+          <div class="node" onclick="showDetails('constant_time')">
+            <div class="node-name">Constant-Time Compare</div>
+            <div class="node-sub">Timing attack mitigation</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="flow-arrow">▼ Dispatched System & Security Telemetry</div>
+
+      <!-- Layer 5 -->
+      <div class="layer-card">
+        <div class="layer-header">
+          <div class="layer-title l-5">
+            <span>📡 Layer 5</span> SOC Monitoring, Telemetry & Real-Time Alerts
+          </div>
+          <span style="font-size: 11px; color: #64748b;">Incident Response Stream</span>
+        </div>
+        <div class="node-grid">
+          <div class="node" onclick="showDetails('soc')">
+            <div class="node-name">Real-Time SOC Gateway</div>
+            <div class="node-sub">WebSockets & Socket.IO feed</div>
+          </div>
+          <div class="node" onclick="showDetails('audit')">
+            <div class="node-name">Immutable Audit Trail</div>
+            <div class="node-sub">Correlation ID trace logs</div>
+          </div>
+          <div class="node" onclick="showDetails('tamper_alert')">
+            <div class="node-name">Tamper Detection Alerts</div>
+            <div class="node-sub">Instant mismatch escalation</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Inspector Details Panel -->
+    <div class="detail-card">
+      <div id="comp-tag" class="detail-tag">Perimeter Defense</div>
+      <h3 id="comp-title" class="detail-title">Helmet & CSP</h3>
+      <p id="comp-desc" class="detail-desc">
+        Enforces strict Content-Security-Policy headers restricting script execution to origin 'self'. Disallows unsafe inline scripts and frames to neutralize stored and reflected Cross-Site Scripting (XSS).
+      </p>
+
+      <div class="defense-box">
+        <h4>OWASP Defense Category</h4>
+        <p id="comp-owasp">A03: Injection & A05: Security Misconfiguration</p>
+      </div>
+
+      <div class="defense-box">
+        <h4>Implementation Evidence</h4>
+        <p id="comp-impl"><code>backend/main.py</code> (SecurityHeaderMiddleware) & <code>frontend/index.html</code></p>
+      </div>
+
+      <div class="toggle-state-row">
+        <div class="state-pill state-on">
+          <strong>SECURITY ON</strong><br>
+          <span id="comp-on">Enforced CSP + HTML Escaping</span>
+        </div>
+        <div class="state-pill state-off">
+          <strong>SECURITY OFF</strong><br>
+          <span id="comp-off">No CSP, raw unescaped HTML allowed</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    const data = {
+      csp: {
+        tag: "Perimeter Defense",
+        title: "Helmet & Content-Security-Policy",
+        desc: "Injects strict security headers including CSP (default-src 'self'), X-Frame-Options: DENY, and X-Content-Type-Options: nosniff. Prevents unauthorized inline scripts and iframe clickjacking.",
+        owasp: "A03:2021 Injection & A05:2021 Security Misconfiguration",
+        impl: "backend/main.py (SecurityHeaderMiddleware)",
+        on: "Strict CSP header set; output sanitized",
+        off: "Standard default headers; no CSP enforcement"
+      },
+      cookies: {
+        tag: "Transport Layer",
+        title: "Session Cookie Hardening",
+        desc: "Session tokens are stored in HttpOnly cookies with SameSite=Lax and Secure flags, preventing client-side JavaScript access and cross-site exfiltration.",
+        owasp: "A07:2021 Identification & Authentication Failures",
+        impl: "backend/routers/auth.py & backend/routers/deps.py",
+        on: "HttpOnly, SameSite=Lax, Secure flags active",
+        off: "Plain cookies without HttpOnly flags"
+      },
+      csrf: {
+        tag: "Transport Layer",
+        title: "Double-Submit Anti-CSRF",
+        desc: "State-changing POST/PUT/DELETE endpoints require matching X-CSRF-Token headers against a signed session cookie.",
+        owasp: "A01:2021 Broken Access Control (CSRF)",
+        impl: "backend/routers/admin_security.py",
+        on: "CSRF token strictly verified",
+        off: "CSRF check bypassed for demo"
+      },
+      cors: {
+        tag: "Network Boundary",
+        title: "CORS Whitelist & Localhost Isolation",
+        desc: "Server binds strictly to 127.0.0.1 and enforces an explicit origin whitelist (http://localhost:5173).",
+        owasp: "A05:2021 Security Misconfiguration",
+        impl: "backend/core/config.py & main.py",
+        on: "Strict origin validation",
+        off: "Permissive headers (demo mode banner visible)"
+      },
+      sqli: {
+        tag: "Identity & Auth",
+        title: "Parameterized SQL Engine",
+        desc: "Safe parameterized queries execute SQL with bounded parameter inputs, eliminating SQL injection threats completely.",
+        owasp: "A03:2021 Injection (SQLi)",
+        impl: "backend/core/sqlite_db.py (query_login)",
+        on: "SELECT * FROM users WHERE email = ? (Parameterized)",
+        off: "String concatenated SQL (admin@campus.edu' -- bypasses)"
+      },
+      argon2: {
+        tag: "Identity & Auth",
+        title: "Argon2 / High-Entropy Hash",
+        desc: "User passwords are stored using high-work-factor salted cryptographic hashing to resist offline dictionary and rainbow-table attacks.",
+        owasp: "A02:2021 Cryptographic Failures",
+        impl: "backend/core/security.py (hash_password)",
+        on: "Argon2 / PBKDF2 with unique per-user salt",
+        off: "Fast single-round unsalted SHA-256"
+      },
+      bruteforce: {
+        tag: "Identity & Auth",
+        title: "Rate Limiting & Account Lockout",
+        desc: "Tracks consecutive failed login attempts per account. 5 consecutive failures triggers an immediate 15-minute account lockout and SOC alert.",
+        owasp: "A07:2021 Identification and Authentication Failures",
+        impl: "backend/routers/auth.py",
+        on: "Locked out after 5 failures + instant SOC alert",
+        off: "Unlimited failed login attempts permitted"
+      },
+      session_rot: {
+        tag: "Identity & Auth",
+        title: "Session Rotation",
+        desc: "On successful login, the existing session ID is invalidated and an entirely new 32-byte cryptographic session ID is minted to prevent session fixation.",
+        owasp: "A07:2021 Identification and Authentication Failures",
+        impl: "backend/routers/auth.py",
+        on: "Cryptographic 32-byte session regenerated",
+        off: "Static session retention"
+      },
+      rbac: {
+        tag: "Access Control",
+        title: "Role-Based Access Control (RBAC)",
+        desc: "Enforces strict permissions per role (Admin, Faculty, Student) on every API endpoint and route on the server side.",
+        owasp: "A01:2021 Broken Access Control",
+        impl: "backend/routers/deps.py (require_role)",
+        on: "403 Forbidden on unauthorized role access",
+        off: "Any authenticated user can reach faculty/admin routes"
+      },
+      idor: {
+        tag: "Access Control",
+        title: "BOLA / IDOR Ownership Verification",
+        desc: "Validates that the authenticated user owns or is legitimately enrolled in a requested resource before returning records.",
+        owasp: "A01:2021 Broken Object Level Authorization",
+        impl: "backend/routers/projects.py & attendance.py",
+        on: "Strict student/owner identity match required",
+        off: "No ownership checks; student records queryable"
+      },
+      schema: {
+        tag: "Input Validation",
+        title: "Pydantic Schema Validation",
+        desc: "Validates JSON request payloads against strictly typed schemas with length bounds and regex constraints.",
+        owasp: "A03:2021 Injection & Data Validation",
+        impl: "backend/models/schemas.py",
+        on: "Invalid types rejected with HTTP 422",
+        off: "Lenient parsing"
+      },
+      hmac: {
+        tag: "Data Integrity",
+        title: "HMAC-SHA256 Digital Verification Seals",
+        desc: "Computes canonical cryptographic HMACs over attendance records (session ID + student ID + status + date) using an external master key.",
+        owasp: "A08:2021 Software and Data Integrity Failures",
+        impl: "backend/core/crypto.py (compute_attendance_hmac)",
+        on: "Tampering immediately caught & flagged in red",
+        off: "No signature checks; altered records accepted"
+      },
+      rsa_aes: {
+        tag: "Confidentiality",
+        title: "Hybrid RSA-2048 + AES-256-GCM Chat Encryption",
+        desc: "Project chat messages are encrypted with a random AES-256 session key sealed inside an RSA-2048 envelope before database storage.",
+        owasp: "A02:2021 Cryptographic Failures",
+        impl: "backend/core/chat_crypto.py",
+        on: "Ciphertext stored (ENC:RSA-AES:...)",
+        off: "Cleartext stored in database"
+      },
+      constant_time: {
+        tag: "Cryptographic Defenses",
+        title: "Constant-Time Verification",
+        desc: "Uses secrets.compare_digest to compare hashes and HMAC signatures in constant time, preventing side-channel timing attacks.",
+        owasp: "A02:2021 Cryptographic Failures",
+        impl: "backend/core/crypto.py",
+        on: "Constant-time string comparison",
+        off: "Standard equality operator"
+      },
+      soc: {
+        tag: "Monitoring & IR",
+        title: "Real-Time SOC Event Gateway",
+        desc: "Dispatches real-time security events over native WebSockets and Socket.IO directly to the Administrator Security Operations Center console.",
+        owasp: "A09:2021 Security Logging & Monitoring Failures",
+        impl: "backend/core/ws_manager.py & backend/main.py",
+        on: "Live streaming of brute force, SQLi & tamper alerts",
+        off: "Events logged silently without real-time broadcast"
+      },
+      audit: {
+        tag: "Monitoring & IR",
+        title: "Immutable System Audit Trail",
+        desc: "Maintains an immutable ledger of administrative state changes (security mode toggles, grade alterations, attendance overrides) with correlation IDs.",
+        owasp: "A09:2021 Security Logging & Monitoring Failures",
+        impl: "backend/routers/audit.py",
+        on: "All sensitive actions logged with IP, timestamp & actor",
+        off: "Unlogged alterations"
+      },
+      tamper_alert: {
+        tag: "Monitoring & IR",
+        title: "Automated Tamper Alert Dispatch",
+        desc: "When an HMAC mismatch is identified during verification sweeps, an automated CRITICAL severity incident is dispatched to the SOC.",
+        owasp: "A08:2021 Integrity Failures & A09:2021 Logging Failures",
+        impl: "backend/routers/attendance.py",
+        on: "Instant SOC alert on forged attendance",
+        off: "Tampering undetected"
+      }
+    };
+
+    function showDetails(id) {
+      const item = data[id];
+      if (!item) return;
+
+      document.querySelectorAll('.node').forEach(n => n.classList.remove('active'));
+      event.currentTarget.classList.add('active');
+
+      document.getElementById('comp-tag').innerText = item.tag;
+      document.getElementById('comp-title').innerText = item.title;
+      document.getElementById('comp-desc').innerText = item.desc;
+      document.getElementById('comp-owasp').innerText = item.owasp;
+      document.getElementById('comp-impl').innerHTML = `<code>${item.impl}</code>`;
+      document.getElementById('comp-on').innerText = item.on;
+      document.getElementById('comp-off').innerText = item.off;
+    }
+  </script>
+</body>
+</html>
