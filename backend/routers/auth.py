@@ -16,7 +16,7 @@ from core.database import db
 from core.security import verify_password, hash_password, generate_secure_token, generate_csrf_token
 from core.config import settings
 from core.security_mode import is_secure
-from core.sqlite_db import query_login
+from core.sqlite_db import query_login, add_user_to_sqlite
 from models.schemas import LoginRequest, ChangePasswordRequest, RegisterRequest
 from routers.deps import get_current_user, require_roles, add_audit_log, add_security_event
 
@@ -298,6 +298,11 @@ async def register(body: RegisterRequest, request: Request, response: Response):
     }
 
     db.users.append(new_user)
+
+    try:
+        add_user_to_sqlite(new_user, body.password)
+    except Exception as e:
+        print(f"[Warning] Could not sync user to SQLite: {e}")
 
     add_audit_log({
         "actorId": new_user["_id"], "actorEmail": email,
