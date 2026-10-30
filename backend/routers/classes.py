@@ -29,6 +29,7 @@ async def list_classes(current_user=Depends(get_current_user)):
             **cls,
             "facultyName": faculty["fullName"] if faculty else "Unknown",
             "studentCount": student_count,
+            "enrollmentCount": student_count,
         })
     return {"success": True, "data": enriched}
 
@@ -49,7 +50,15 @@ async def get_class(class_id: str, current_user=Depends(get_current_user)):
 
     faculty = db.get_user_by_id(cls["facultyId"])
     student_count = sum(1 for e in db.enrollments if e["classId"] == class_id and e["status"] == "enrolled")
-    return {"success": True, "data": {**cls, "facultyName": faculty["fullName"] if faculty else "Unknown", "studentCount": student_count}}
+    return {
+        "success": True,
+        "data": {
+            **cls,
+            "facultyName": faculty["fullName"] if faculty else "Unknown",
+            "studentCount": student_count,
+            "enrollmentCount": student_count,
+        }
+    }
 
 
 @router.get("/{class_id}/students")
@@ -72,11 +81,21 @@ async def get_class_students(class_id: str, current_user=Depends(get_current_use
             students.append({
                 "enrollmentId": enr["_id"],
                 "userId": student["_id"],
+                "studentId": student["_id"],
                 "fullName": student["fullName"],
                 "email": student["email"],
                 "studentOrStaffId": student["studentOrStaffId"],
+                "studentNumber": student["studentOrStaffId"],
                 "department": student["department"],
                 "enrolledAt": enr["enrolledAt"],
                 "status": enr["status"],
             })
     return {"success": True, "data": students}
+
+
+@router.get("/{class_id}/roster")
+async def get_class_roster(class_id: str, current_user=Depends(get_current_user)):
+    """Returns roster supporting both array and {students: [...]} format."""
+    res = await get_class_students(class_id, current_user)
+    students = res["data"]
+    return {"success": True, "data": students, "students": students}

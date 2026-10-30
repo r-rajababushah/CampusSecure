@@ -428,10 +428,12 @@ const FlowCanvasInner: React.FC<ArchitectureFlowPageProps> = ({ isStandalone = f
           `Real HMAC Sweep Complete: ${res.data?.verifiedValid}/${res.data?.totalChecked} verified valid. Status: ${res.data?.status}`
         );
       } else if (actionType === 'simulate_tamper') {
-        // Attendance tamper probe: simulate what happens if a record status is modified
-        const sweepRes = await apiRequest('/api/v1/attendance/verify', { method: 'POST' });
+        // Attendance tamper probe: simulate status alteration and immediately execute HMAC verification
+        const simRes = await apiRequest<any>('/api/v1/attendance/simulate-tampering', { method: 'POST' });
+        const sweepRes = await apiRequest<any>('/api/v1/attendance/verify', { method: 'POST' });
+        const count = sweepRes.data?.tamperedCount ?? sweepRes.tamperedCount ?? 0;
         setTestNotificationStatus(
-          `Tamper Protection Active: Timing-safe sweep verified ${sweepRes.data?.totalChecked} records. Any unauthorized status change invalidates the SHA-256 HMAC seal instantly!`
+          `🚨 Tamper Simulation & Verification Complete: Modified record ${simRes.data?.recordId || ''} directly. Immediate HMAC verification sweep detected ${count} tampered record(s) and logged to SQLite attendance_tamper_logs!`
         );
       } else if (actionType === 'simulate_sqli') {
         const res = await apiRequest('/api/v1/sqli-lab/search', {
