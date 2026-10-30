@@ -127,7 +127,7 @@ function MainApp() {
   const effectiveTab = canAccessTab ? activeTab : 'dashboard';
 
   return (
-    <div className="flex min-h-screen flex-col bg-slate-50 font-sans antialiased text-slate-900">
+    <div className="flex min-h-screen flex-col bg-[#0b0f19] font-sans antialiased text-slate-100">
       {/* Global Insecure Demo Banner on every page */}
       <InsecureDemoBanner />
 
@@ -139,7 +139,7 @@ function MainApp() {
           onClose={() => setSidebarOpen(false)}
         />
 
-        <div className="flex flex-1 flex-col overflow-hidden">
+        <div className="flex flex-1 flex-col overflow-hidden bg-[#0b0f19] bg-[radial-gradient(ellipse_80%_80%_at_50%_-20%,rgba(59,130,246,0.08),rgba(255,255,255,0))]">
           <Navbar
             onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
             activeTab={effectiveTab}
