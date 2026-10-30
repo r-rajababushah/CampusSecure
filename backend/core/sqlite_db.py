@@ -292,6 +292,23 @@ def init_sqlite_db(force: bool = False):
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, attendance_rows)
 
+    # Pre-seed initial tamper detection audit logs for the 3 target records
+    initial_tamper_logs = [
+        ("rec_ses_cs401_06_usr_stu_07", "STU-2026-1001", "ses_cs401_06", "absent", "present", "2026-10-14T11:00:00Z", "usr_fac_01", "127.0.0.1", "CRITICAL", "HMAC mismatch: Database row altered to 'present' while signature seal was issued for 'absent'."),
+        ("rec_ses_cs401_08_usr_stu_08", "STU-2026-1002", "ses_cs401_08", "absent", "present", "2026-10-19T11:00:00Z", "usr_fac_01", "127.0.0.1", "CRITICAL", "HMAC mismatch: Database row altered to 'present' while signature seal was issued for 'absent'."),
+        ("rec_ses_cs401_10_usr_stu_09", "STU-2026-1003", "ses_cs401_10", "absent", "present", "2026-10-23T11:00:00Z", "usr_fac_01", "127.0.0.1", "CRITICAL", "HMAC mismatch: Database row altered to 'present' while signature seal was issued for 'absent'."),
+    ]
+    cursor.executemany("""
+        INSERT INTO attendance_tamper_logs (recordId, studentId, sessionId, originalStatus, tamperedStatus, detectedAt, detectedBy, clientIp, severity, notes)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, initial_tamper_logs)
+
+    # Initial session logging record
+    cursor.execute("""
+        INSERT INTO auth_session_logs (sessionId, userId, userEmail, userRole, loginAt, clientIp, userAgent, authMethod, status)
+        VALUES ('sess_seed_admin', 'usr_admin_01', 'admin@campus.edu', 'admin', '2026-10-30T10:00:00Z', '127.0.0.1', 'Mozilla/5.0 (Windows NT 10.0)', 'argon2id_salted', 'system_init')
+    """)
+
     conn.commit()
     conn.close()
 
@@ -368,6 +385,59 @@ def query_login(email: str, password: str) -> Tuple[Optional[Dict[str, Any]], st
         if verify_password(password, user["passwordHash"]):
             return user, sql, False
         return None, sql, False
+
+
+def log_tamper_event_to_sqlite(
+    record_id: str,
+    student_id: str,
+    session_id: str,
+    original_status: str,
+    tampered_status: str,
+    client_ip: str = "127.0.0.1",
+    detected_by: str = "system",
+    severity: str = "CRITICAL",
+    notes: str = ""
+):
+    """Logs an attendance tampering event directly into SQLite."""
+    try:
+        from datetime import datetime
+        now = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO attendance_tamper_logs (recordId, studentId, sessionId, originalStatus, tamperedStatus, detectedAt, detectedBy, clientIp, severity, notes)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (record_id, student_id, session_id, original_status, tampered_status, now, detected_by, client_ip, severity, notes))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"[Warning] Failed to log tamper event to SQLite: {e}")
+
+
+def log_session_to_sqlite(
+    session_id: str,
+    user_id: str,
+    user_email: str,
+    user_role: str,
+    client_ip: str = "127.0.0.1",
+    user_agent: str = "Browser",
+    auth_method: str = "argon2id_salted",
+    status: str = "authenticated"
+):
+    """Logs a user login/session event directly into SQLite."""
+    try:
+        from datetime import datetime
+        now = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO auth_session_logs (sessionId, userId, userEmail, userRole, loginAt, clientIp, userAgent, authMethod, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (session_id, user_id, user_email, user_role, now, client_ip, user_agent, auth_method, status))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"[Warning] Failed to log session to SQLite: {e}")
 
 
 # Initialize at import

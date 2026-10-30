@@ -16,7 +16,7 @@ from core.database import db
 from core.security import verify_password, hash_password, generate_secure_token, generate_csrf_token
 from core.config import settings
 from core.security_mode import is_secure
-from core.sqlite_db import query_login, add_user_to_sqlite
+from core.sqlite_db import query_login, add_user_to_sqlite, log_session_to_sqlite
 from models.schemas import LoginRequest, ChangePasswordRequest, RegisterRequest
 from routers.deps import get_current_user, require_roles, add_audit_log, add_security_event
 
@@ -179,6 +179,18 @@ async def login(body: LoginRequest, request: Request, response: Response):
         "ip": client_ip,
         "userAgent": request.headers.get("user-agent", "Browser"),
     }
+
+    # Record persistent session login log in SQLite
+    log_session_to_sqlite(
+        session_id=session_id,
+        user_id=user["_id"],
+        user_email=user["email"],
+        user_role=user["role"],
+        client_ip=client_ip,
+        user_agent=request.headers.get("user-agent", "Browser"),
+        auth_method="argon2id_salted" if is_secure() else "plaintext_sqli_demo",
+        status="authenticated"
+    )
 
     add_audit_log({
         "actorId": user["_id"], "actorEmail": user["email"],

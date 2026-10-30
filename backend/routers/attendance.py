@@ -15,6 +15,7 @@ from fastapi import APIRouter, Request, HTTPException, Depends
 
 from core.database import db
 from core.crypto import compute_attendance_hmac, verify_attendance_hmac
+from core.sqlite_db import log_tamper_event_to_sqlite
 from core.security_mode import is_secure
 from models.schemas import (
     CreateAttendanceSessionRequest,
@@ -168,6 +169,17 @@ async def get_session_records(
                     "actorId": current_user["_id"], "actorEmail": current_user["email"],
                     "notes": f"Stored HMAC does not match canonical fields: session={r['sessionId']}, status={r['status']}",
                 })
+                log_tamper_event_to_sqlite(
+                    record_id=r["_id"],
+                    student_id=r["studentId"],
+                    session_id=r["sessionId"],
+                    original_status="absent",
+                    tampered_status=r.get("status", "unknown"),
+                    client_ip=client_ip,
+                    detected_by=current_user["_id"],
+                    severity="critical",
+                    notes=f"Stored HMAC does not match canonical fields: session={r['sessionId']}, status={r['status']}",
+                )
         else:
             # DEMO-ONLY INSECURE PATH: No tamper detection, modified status returned without alert
             rec_copy["isTampered"] = False
@@ -414,6 +426,17 @@ async def verify_integrity(request: Request, current_user=Depends(require_roles(
                 "isSimulatedDemo": True,
                 "notes": f"studentId: {record['studentId']}, session: {record['sessionId']}, status: {record['status']}",
             })
+            log_tamper_event_to_sqlite(
+                record_id=record["_id"],
+                student_id=record["studentId"],
+                session_id=record["sessionId"],
+                original_status="absent",
+                tampered_status=record["status"],
+                client_ip=client_ip,
+                detected_by=current_user["_id"],
+                severity="critical",
+                notes=f"Read-time sweep HMAC verification failure: status={record['status']}",
+            )
 
     return {"success": True, "data": {
         "totalChecked": total_checked,
@@ -445,6 +468,18 @@ async def simulate_tampering(request: Request, current_user=Depends(require_role
         "isSimulatedDemo": True,
         "actorEmail": current_user["email"],
     })
+
+    log_tamper_event_to_sqlite(
+        record_id=record["_id"],
+        student_id=record["studentId"],
+        session_id=record["sessionId"],
+        original_status=original_status,
+        tampered_status=record["status"],
+        client_ip=request.client.host if request.client else "127.0.0.1",
+        detected_by=current_user["_id"],
+        severity="high",
+        notes="Simulated direct DB modification without valid cryptographic HMAC",
+    )
 
     return {
         "success": True,
