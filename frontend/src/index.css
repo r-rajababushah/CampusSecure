@@ -1,1 +1,162 @@
 @import "tailwindcss";
+
+/* A quieter macOS-inspired workspace skin with a consistent system-blue accent. */
+:root {
+  color-scheme: light;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  background: #f5f5f7;
+  color: #1d1d1f;
+}
+
+html, body, #root { min-height: 100%; }
+body { margin: 0; background: #f5f5f7; color: #1d1d1f; }
+*, *::before, *::after { font-family: inherit; }
+button, input, select, textarea { font: inherit; }
+button { -webkit-tap-highlight-color: transparent; }
+
+.app-shell, .app-content,
+[class*="bg-[#0b0f19]"] {
+  background-color: #f5f5f7 !important;
+  background-image: none !important;
+  color: #1d1d1f;
+}
+
+/* Soft, distinct surfaces replace the former near-black card palette. */
+[class~="bg-slate-950"], [class*="bg-slate-950/"] { background-color: #f0f1f5 !important; }
+[class~="bg-slate-900"], [class*="bg-slate-900/"] { background-color: #fff !important; }
+[class~="bg-slate-800"], [class*="bg-slate-800/"] { background-color: #f7f8fa !important; }
+[class*="bg-gradient-to-"] {
+  background-image: linear-gradient(115deg, #edf4ff 0%, #f5f3ff 54%, #f7f8fa 100%) !important;
+}
+
+/* Normalize the old multi-neon accents to Apple's familiar system palette. */
+[class*="text-cyan-"], [class*="text-sky-"] { color: #007aff !important; }
+[class*="text-fuchsia-"], [class*="text-violet-"] { color: #5856d6 !important; }
+[class*="text-emerald-"] { color: #248a3d !important; }
+[class*="text-amber-"] { color: #9a6700 !important; }
+[class*="text-blue-"] { color: #007aff !important; }
+[class*="border-cyan-"], [class*="border-sky-"], [class*="border-blue-"] { border-color: #c9dcfb !important; }
+[class*="border-fuchsia-"], [class*="border-violet-"] { border-color: #dedafb !important; }
+[class*="border-emerald-"] { border-color: #c8e5d0 !important; }
+[class*="border-amber-"] { border-color: #efdfb7 !important; }
+[class*="bg-cyan-"], [class*="bg-sky-"], [class*="bg-blue-"] { background-color: #edf4ff !important; }
+[class*="bg-fuchsia-"], [class*="bg-violet-"] { background-color: #f2f0ff !important; }
+[class*="bg-emerald-"] { background-color: #edf7ef !important; }
+[class*="bg-amber-"] { background-color: #fff7e5 !important; }
+[class*="bg-red-"] { background-color: #fff0f0 !important; }
+[class*="border-red-"] { border-color: #f1caca !important; }
+[class*="text-red-"] { color: #c93434 !important; }
+
+[class*="border-slate-800"], [class*="border-slate-900"], [class*="border-slate-700"] {
+  border-color: #e1e1e6 !important;
+}
+
+[class~="text-white"], [class~="text-slate-100"] { color: #1d1d1f !important; }
+[class~="text-slate-200"] { color: #303034 !important; }
+[class~="text-slate-300"] { color: #48484a !important; }
+[class~="text-slate-400"] { color: #6e6e73 !important; }
+[class~="text-slate-500"] { color: #86868b !important; }
+[class~="text-transparent"] { color: #1d1d1f !important; background-clip: border-box !important; }
+
+/* Filled actions retain a legible system accent instead of becoming pale pills. */
+button[class~="bg-blue-600"], button[class~="bg-indigo-600"],
+button[class~="bg-emerald-600"], button[class~="bg-red-600"],
+button[class~="bg-cyan-600"] { color: #fff !important; }
+button[class~="bg-blue-600"], button[class~="bg-indigo-600"], button[class~="bg-cyan-600"] {
+  background-color: #007aff !important;
+}
+button[class~="bg-emerald-600"] { background-color: #248a3d !important; }
+button[class~="bg-red-600"] { background-color: #c93434 !important; }
+
+/* Keep dark text readable on the newly pale status chips. */
+[class*="bg-cyan-"] [class~="text-white"], [class*="bg-blue-"] [class~="text-white"],
+[class*="bg-fuchsia-"] [class~="text-white"], [class*="bg-emerald-"] [class~="text-white"],
+[class*="bg-amber-"] [class~="text-white"], [class*="bg-red-"] [class~="text-white"] { color: #303034 !important; }
+
+/* Keep the app calm and tactile: small radii, subtle dividers, little elevation. */
+.app-shell aside { background-color: #f2f2f5 !important; }
+.sticky.bg-red-600 { background-color: #c93434 !important; color: #fff !important; }
+.sticky.bg-red-600 > div { color: #fff !important; }
+.sticky.bg-red-600 button { background-color: #fff !important; color: #a32020 !important; }
+.app-shell header {
+  background: rgb(255 255 255 / 88%) !important;
+  border-color: #e1e1e6 !important;
+  box-shadow: 0 1px 0 rgb(0 0 0 / 3%);
+}
+.app-shell main { scrollbar-color: #c7c7cc transparent; }
+.app-shell [class*="shadow-2xl"], .app-shell [class*="shadow-xl"],
+.app-shell [class*="shadow-lg"] { box-shadow: 0 1px 3px rgb(0 0 0 / 7%), 0 8px 24px rgb(0 0 0 / 3%) !important; }
+.app-shell [class*="rounded-2xl"] { border-radius: 14px !important; }
+.app-shell [class*="rounded-xl"] { border-radius: 10px !important; }
+.app-shell [class*="backdrop-blur"] { backdrop-filter: saturate(160%) blur(18px); }
+.app-shell [class*="bg-gradient-to-"] [class~="text-white"] { color: #007aff !important; }
+.app-shell h1, .app-shell h2, .app-shell h3 {
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", sans-serif;
+  font-weight: 600;
+  letter-spacing: -.025em;
+}
+.app-shell [class*="font-extrabold"] { font-weight: 650 !important; }
+.app-shell [class*="tracking-wider"] { letter-spacing: .08em; }
+.app-shell input, .app-shell select, .app-shell textarea {
+  border-color: #d2d2d7;
+  border-radius: 9px;
+  background-color: #fff;
+  color: #1d1d1f;
+}
+.app-shell input:focus, .app-shell select:focus, .app-shell textarea:focus {
+  outline: 3px solid rgb(0 122 255 / 20%);
+  border-color: #007aff;
+}
+.app-shell button { transition: background-color 140ms ease, border-color 140ms ease, box-shadow 140ms ease; }
+.app-shell button:hover { filter: brightness(.97); }
+
+/* Small reusable primitives follow the shadcn/ui Card, Badge and Button API. */
+.ui-card {
+  border: 1px solid #e1e1e6;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 4%);
+}
+.ui-card-header { display: flex; flex-direction: column; gap: 5px; padding: 20px 20px 0; }
+.ui-card-title { margin: 0; color: #1d1d1f; font-size: 16px; line-height: 1.35; font-weight: 600; }
+.ui-card-description { margin: 0; color: #6e6e73; font-size: 13px; line-height: 1.5; }
+.ui-card-content { padding: 18px 20px 20px; }
+.ui-badge {
+  display: inline-flex; align-items: center; gap: 6px; width: fit-content;
+  border: 1px solid transparent; border-radius: 999px; padding: 3px 9px;
+  font-size: 11px; font-weight: 600; line-height: 1.4; white-space: nowrap;
+}
+.ui-badge-neutral { color: #55565a; background: #f0f1f4; border-color: #e5e5ea; }
+.ui-badge-info { color: #0064d1; background: #edf4ff; border-color: #d6e6ff; }
+.ui-badge-success { color: #207a35; background: #edf7ef; border-color: #d5ead9; }
+.ui-badge-warning { color: #8a5a00; background: #fff7e5; border-color: #f0dfb7; }
+.ui-badge-danger { color: #b42323; background: #fff0f0; border-color: #f0d0d0; }
+.ui-button {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  border: 1px solid transparent; border-radius: 9px; font-weight: 600; line-height: 1.25;
+  cursor: pointer; transition: background-color 140ms ease, color 140ms ease, border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease;
+}
+.ui-button:focus-visible { outline: 3px solid rgb(0 122 255 / 25%); outline-offset: 2px; }
+.ui-button:active:not(:disabled) { transform: scale(.985); }
+.ui-button:disabled { cursor: not-allowed; opacity: .55; }
+.ui-button-sm { min-height: 32px; padding: 6px 11px; font-size: 12px; }
+.ui-button-md { min-height: 38px; padding: 8px 14px; font-size: 13px; }
+.ui-button-primary { background: #007aff; color: #fff; box-shadow: 0 1px 2px rgb(0 122 255 / 18%); }
+.ui-button-primary:hover:not(:disabled) { background: #006be6; }
+.ui-button-secondary { color: #303034; background: #fff; border-color: #d2d2d7; }
+.ui-button-secondary:hover:not(:disabled) { background: #f7f7f9; }
+.ui-button-ghost { color: #48484a; background: transparent; }
+.ui-button-ghost:hover:not(:disabled) { background: #f0f1f4; }
+.ui-button-success { color: #207a35; background: #edf7ef; border-color: #d5ead9; }
+.ui-button-danger { color: #b42323; background: #fff0f0; border-color: #f0d0d0; }
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-button { transition: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}

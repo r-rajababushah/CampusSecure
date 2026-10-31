@@ -211,6 +211,14 @@ async def login(body: LoginRequest, request: Request, response: Response):
             },
             "sessionId": session_id,
             "csrfToken": csrf_token,
+            "securityTrace": {
+                "passwordHashAlgorithm": _password_hash_description(user["passwordHash"]),
+                "passwordHashPreview": _password_hash_preview(user["passwordHash"]),
+                "passwordDatabaseField": "users_auth.passwordHash",
+                "rawPasswordDatabaseField": "users_auth.password",
+                "rawPasswordStored": False if is_secure() else True,
+                "storedAs": "salted hash only" if is_secure() else "unsalted MD5 demo hash",
+            },
         }
     }
     json_resp = JSONResponse(content=resp_data)
@@ -237,6 +245,32 @@ def _validate_password_strength(password: str) -> Optional[str]:
     if not _re.search(r"[!@#$%^&*]", password):
         return "Password must contain a special character (!@#$%^&*)."
     return None
+
+
+def _password_hash_description(stored_hash: str) -> str:
+    if stored_hash.startswith("$argon2"):
+        return "Argon2id"
+    if stored_hash.startswith("$2"):
+        return "bcrypt"
+    if stored_hash.startswith("pbkdf2:sha256:"):
+        return "PBKDF2-HMAC-SHA256 · 100,000 iterations · unique 16-byte salt"
+    if stored_hash.startswith("md5$"):
+        return "MD5 · insecure demo mode"
+    return "salted password hash"
+
+
+def _password_hash_preview(stored_hash: str) -> str:
+    """Describe the stored verifier without returning its salt or digest."""
+    if stored_hash.startswith("$argon2"):
+        return "$argon2id$v=…$<salt redacted>$<derived verifier redacted>"
+    if stored_hash.startswith("$2"):
+        return "$2b$<cost>$<salt and verifier redacted>"
+    if stored_hash.startswith("pbkdf2:sha256:"):
+        scheme, _salt, _digest = stored_hash.split("$", 2)
+        return f"{scheme}$<16-byte salt redacted>$<derived key redacted>"
+    if stored_hash.startswith("md5$"):
+        return "md5$<insecure demo digest redacted>"
+    return "<stored verifier redacted>"
 
 
 @router.post("/register", status_code=201)
@@ -311,8 +345,25 @@ async def register(body: RegisterRequest, request: Request, response: Response):
 
     db.users.append(new_user)
 
+    # Newly registered students join the flagship attendance roster immediately,
+    # so their attendance view uses the same data source as the class roster.
+    if role == "student" and any(cls["_id"] == "cls_cs401" for cls in db.classes):
+        if not any(
+            enrollment["classId"] == "cls_cs401" and enrollment["studentId"] == new_user["_id"]
+            for enrollment in db.enrollments
+        ):
+            db.enrollments.append({
+                "_id": f"enr_{secrets.token_hex(6)}",
+                "classId": "cls_cs401",
+                "studentId": new_user["_id"],
+                "enrolledAt": now_str,
+                "status": "enrolled",
+                "createdAt": now_str,
+                "updatedAt": now_str,
+            })
+
     try:
-        add_user_to_sqlite(new_user, body.password)
+        add_user_to_sqlite(new_user, raw_password=body.password if not is_secure() else None)
     except Exception as e:
         print(f"[Warning] Could not sync user to SQLite: {e}")
 
@@ -354,6 +405,16 @@ async def register(body: RegisterRequest, request: Request, response: Response):
             },
             "sessionId": session_id,
             "csrfToken": csrf_token,
+            "securityTrace": {
+                "passwordHashAlgorithm": _password_hash_description(password_hash),
+                "passwordHashPreview": _password_hash_preview(password_hash),
+                "accountDatabaseId": new_user["_id"],
+                "identityDatabaseFields": "users_auth._id + users_auth.studentOrStaffId",
+                "passwordDatabaseField": "users_auth.passwordHash",
+                "rawPasswordDatabaseField": "users_auth.password",
+                "storedAs": "salted hash only" if is_secure() else "unsalted MD5 demo hash",
+                "rawPasswordStored": False if is_secure() else True,
+            },
         },
     }
     json_resp = JSONResponse(content=resp_data, status_code=201)

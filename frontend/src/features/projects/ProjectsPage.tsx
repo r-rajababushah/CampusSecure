@@ -1,7 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../auth/AuthContext.js';
 import { apiRequest } from '../../lib/api.js';
-import { joinProjectRoom, leaveProjectRoom, onNewMessage } from '../../lib/socket.js';
+import { decryptMessageFromTransport, encryptMessageForTransport } from '../../lib/secureMessaging.js';
+import { useSecurityMode } from '../security-center/SecurityModeContext.js';
+import { useSecurityProcess } from '../../hooks/useSecurityProcess.js';
+import { SecurityProcessModal } from '../../components/security/SecurityProcessModal.js';
 import { Project, ProjectMember, Task, ChatMessage } from '../../types/index.js';
 import {
   FolderKanban,
@@ -21,6 +24,8 @@ import {
 
 export const ProjectsPage: React.FC = () => {
   const { user } = useAuth();
+  const { isSecure } = useSecurityMode();
+  const securityProcess = useSecurityProcess();
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [activeTab, setActiveTab] = useState<'tasks' | 'chat' | 'members'>('tasks');
@@ -52,6 +57,14 @@ export const ProjectsPage: React.FC = () => {
   const [projectDesc, setProjectDesc] = useState('');
   const [projectNotice, setProjectNotice] = useState<string | null>(null);
 
+  const fetchProjectMessages = async (projectId: string): Promise<ChatMessage[]> => {
+    const data = await apiRequest<ChatMessage[]>(`/api/v1/messages?projectId=${projectId}`);
+    return Promise.all((Array.isArray(data) ? data : []).map(async (message) => ({
+      ...message,
+      content: isSecure ? await decryptMessageFromTransport(message.content) : message.content,
+    })));
+  };
+
   const fetchProjects = async () => {
     try {
       const data = await apiRequest<Project[]>('/api/v1/projects');
@@ -68,16 +81,9 @@ export const ProjectsPage: React.FC = () => {
     fetchProjects();
   }, []);
 
-  // Handle Project Selection and Socket.IO Room Joining
+  // Handle project selection and load the project's data.
   const handleSelectProject = async (p: Project) => {
-    if (selectedProject) {
-      leaveProjectRoom(selectedProject._id);
-    }
-
     setSelectedProject(p);
-    if (user) {
-      joinProjectRoom(p._id, user.id);
-    }
 
     // Load tasks, members, and messages
     try {
@@ -90,7 +96,7 @@ export const ProjectsPage: React.FC = () => {
           console.warn('Failed to fetch members:', e);
           return { members: [] };
         }),
-        apiRequest<ChatMessage[]>(`/api/v1/messages?projectId=${p._id}`).catch((e) => {
+        fetchProjectMessages(p._id).catch((e) => {
           console.warn('Failed to fetch messages:', e);
           return [];
         }),
@@ -103,21 +109,11 @@ export const ProjectsPage: React.FC = () => {
     }
   };
 
-  // Real-time Chat: Dual-layer Socket.IO / Native WebSocket + Background Sync
+  // Project chat uses the native WebSocket endpoint with a polling fallback.
   useEffect(() => {
     if (!selectedProject) return;
 
-    // 1. Socket.IO listener
-    const unsub = onNewMessage((msg) => {
-      if (msg.projectId === selectedProject._id) {
-        setMessages((prev) => {
-          if (prev.some((m) => m._id === msg._id)) return prev;
-          return [...prev, msg];
-        });
-      }
-    });
-
-    // 2. Native WebSocket direct connection to FastAPI backend
+    // Native WebSocket direct connection to FastAPI backend.
     let ws: WebSocket | null = null;
     try {
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -127,11 +123,7 @@ export const ProjectsPage: React.FC = () => {
         try {
           const payload = JSON.parse(event.data);
           if (payload.type === 'new_chat_message' && payload.message) {
-            const newMsg = payload.message;
-            setMessages((prev) => {
-              if (prev.some((m) => m._id === newMsg._id)) return prev;
-              return [...prev, newMsg];
-            });
+            void fetchProjectMessages(selectedProject._id).then(setMessages).catch(() => undefined);
           }
         } catch {
           // ignore parse error
@@ -141,11 +133,11 @@ export const ProjectsPage: React.FC = () => {
       // ignore WS connection errors
     }
 
-    // 3. Fallback background poller every 2.5 seconds when viewing chat tab
+    // Poll for new chat messages when viewing the chat tab.
     const poller = setInterval(async () => {
       if (activeTab !== 'chat') return;
       try {
-        const latest = await apiRequest<ChatMessage[]>(`/api/v1/messages?projectId=${selectedProject._id}`);
+        const latest = await fetchProjectMessages(selectedProject._id);
         if (Array.isArray(latest) && latest.length > 0) {
           setMessages((prev) => {
             if (latest.length !== prev.length || latest[latest.length - 1]._id !== prev[prev.length - 1]?._id) {
@@ -160,11 +152,10 @@ export const ProjectsPage: React.FC = () => {
     }, 2500);
 
     return () => {
-      unsub();
       if (ws) ws.close();
       clearInterval(poller);
     };
-  }, [selectedProject, activeTab, user]);
+  }, [selectedProject, activeTab, user, isSecure]);
 
   useEffect(() => {
     if (activeTab === 'chat') {
@@ -181,14 +172,41 @@ export const ProjectsPage: React.FC = () => {
     setMessageInput('');
 
     try {
-      const sent = await apiRequest<ChatMessage>('/api/v1/messages', {
-        method: 'POST',
-        body: { projectId: selectedProject._id, content },
-      });
-      const resolvedMsg: ChatMessage = {
-        ...sent,
-        content: (sent as any).displayContent || (sent.content && !sent.content.startsWith('ENC:AES-GCM:') ? sent.content : content),
-      };
+      const sent = await securityProcess.run({
+        title: 'Secure message delivery',
+        subtitle: 'Follow each protection used by the message service.',
+        minDurationMs: 9000,
+        steps: [
+          'Compose the readable message in your browser',
+          ...(isSecure ? ['Exchange the AES session key using RSA-OAEP', 'Encrypt the request with AES-256-GCM'] : ['Security mode is OFF: message remains plaintext']),
+          'Authenticate sender and check project membership',
+          ...(isSecure ? ['Escape unsafe HTML before storage', 'Encrypt stored content with AES-256-GCM', 'Seal ciphertext with HMAC-SHA-256 and RSA-PSS', 'Verify seals before returning message content', 'Decrypt the protected response in the recipient browser'] : ['Store and deliver the plaintext demo message']),
+        ],
+        visual: [
+          { label: 'Readable message', value: content },
+          { label: 'Encrypted API payload', value: isSecure ? 'AES-GCM envelope is being created…' : 'Plain text (security mode off)' },
+          { label: 'Database content', value: isSecure ? 'RSA/AES-GCM ciphertext is being stored…' : 'Plain text' },
+          { label: 'Authenticity / integrity', value: isSecure ? 'HMAC + RSA-PSS checks pending…' : 'Checks disabled' },
+        ],
+        resolveVisual: (result: { message: ChatMessage; renderedContent: string }) => [
+          { label: 'Readable message', value: content },
+          { label: 'API response', value: isSecure ? `${result.message.content.slice(0, 62)}…` : 'plaintext response (security mode off)' },
+          { label: 'Database content', value: result.message.rawStoredSnippet || (result.message.isEncryptedInStorage ? 'encrypted ciphertext' : 'plaintext') },
+          { label: 'Storage protection', value: result.message.isEncryptedInStorage ? 'AES-GCM ciphertext at rest' : 'plaintext at rest (security mode off)' },
+          { label: 'HMAC-SHA-256', value: result.message.hmacVerified ? 'verified' : isSecure ? 'failed or unavailable' : 'disabled' },
+          { label: 'Digital signature', value: result.message.signatureVerified ? `${result.message.signatureAlgorithm || 'RSA-PSS'} verified` : isSecure ? 'failed or unavailable' : 'disabled' },
+          { label: 'Recipient browser', value: isSecure ? `AES-GCM decrypted after server verification: ${result.renderedContent.slice(0, 45)}${result.renderedContent.length > 45 ? '…' : ''}` : 'plaintext displayed'},
+        ],
+      }, async () => {
+        const message = await apiRequest<ChatMessage>('/api/v1/messages', {
+          method: 'POST', body: { projectId: selectedProject._id, content: isSecure ? await encryptMessageForTransport(content) : content },
+        });
+        const renderedContent = isSecure ? await decryptMessageFromTransport(message.content) : message.content;
+        return { message, renderedContent };
+      }, (result) => isSecure
+        ? `Stored encrypted. HMAC and ${result.message.signatureAlgorithm || 'RSA-PSS'} signature verified.`
+        : 'Delivered in insecure demo mode.');
+      const resolvedMsg: ChatMessage = { ...sent.message, content: sent.renderedContent };
       setMessages((prev) => [...prev, resolvedMsg]);
     } catch (err: any) {
       setProjectNotice(`Error sending message: ${err.message}`);
@@ -523,11 +541,11 @@ export const ProjectsPage: React.FC = () => {
                     <div className="flex items-center gap-2">
                       <div className="flex items-center gap-1 text-emerald-700 bg-emerald-50 border border-emerald-200/60 rounded px-1.5 py-0.5 font-medium">
                         <Lock className="h-3 w-3" />
-                        <span>RSA-2048 + AES-256-GCM End-to-End Encrypted</span>
+                        <span>{isSecure ? 'AES-256-GCM protected transit and storage' : 'Plaintext demo mode'}</span>
                       </div>
                       <div className="flex items-center gap-1 text-blue-700 bg-blue-50 border border-blue-200/60 rounded px-1.5 py-0.5 font-medium">
                         <Shield className="h-3 w-3" />
-                        <span>HMAC Integrity Sealed</span>
+                        <span>{isSecure ? 'HMAC-SHA-256 + RSA-PSS verified' : 'Integrity seals disabled'}</span>
                       </div>
                     </div>
                     <span className="text-[10px] text-emerald-600 flex items-center gap-1 font-medium">
@@ -576,7 +594,8 @@ export const ProjectsPage: React.FC = () => {
                                   : 'bg-slate-100 text-slate-900 rounded-bl-none'
                               }`}
                             >
-                              {(msg as any).displayContent || (msg.content?.startsWith('ENC:AES-GCM:') ? (
+                              {msg.isTampered ? 'Message hidden because integrity verification failed.' : msg.content}
+                              {/* {msg.content?.startsWith('ENC:AES-GCM:') ? (
                                 <div className="space-y-0.5">
                                   <div className="flex items-center gap-1 font-semibold text-[10px] opacity-80">
                                     <Lock className="h-2.5 w-2.5" />
@@ -588,7 +607,7 @@ export const ProjectsPage: React.FC = () => {
                                 </div>
                               ) : (
                                 msg.content
-                              ))}
+                              )} */}
                             </div>
                           </div>
                         );
@@ -870,6 +889,7 @@ export const ProjectsPage: React.FC = () => {
           </div>
         </div>
       )}
+      <SecurityProcessModal process={securityProcess.process} onClose={securityProcess.close} />
     </div>
   );
 };

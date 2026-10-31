@@ -3,22 +3,23 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { lazy, Suspense, useState, useEffect } from 'react';
+import { AnimatePresence, motion, MotionConfig } from 'motion/react';
 import { AuthProvider, useAuth } from './features/auth/AuthContext.js';
 import { SecurityModeProvider, useSecurityMode } from './features/security-center/SecurityModeContext.js';
 import { LoginPage } from './features/auth/LoginPage.js';
 import { Navbar } from './components/layout/Navbar.js';
 import { Sidebar } from './components/layout/Sidebar.js';
 import { DashboardPage } from './features/dashboard/DashboardPage.js';
-import { ClassesPage } from './features/classes/ClassesPage.js';
-import { AttendancePage } from './features/attendance/AttendancePage.js';
-import { ProjectsPage } from './features/projects/ProjectsPage.js';
-import { UsersPage } from './features/users/UsersPage.js';
-import { SecurityCenterPage } from './features/security-center/SecurityCenterPage.js';
-import { AuditPage } from './features/audit/AuditPage.js';
-import { SqlInjectionLabPage } from './features/sqli-lab/SqlInjectionLabPage.js';
-import { ArchitectureFlowPage } from './features/architecture/ArchitectureFlowPage.js';
 import { AlertTriangle, ShieldAlert, ShieldCheck } from 'lucide-react';
+
+const ClassesPage = lazy(() => import('./features/classes/ClassesPage.js').then((m) => ({ default: m.ClassesPage })));
+const AttendancePage = lazy(() => import('./features/attendance/AttendancePage.js').then((m) => ({ default: m.AttendancePage })));
+const ProjectsPage = lazy(() => import('./features/projects/ProjectsPage.js').then((m) => ({ default: m.ProjectsPage })));
+const UsersPage = lazy(() => import('./features/users/UsersPage.js').then((m) => ({ default: m.UsersPage })));
+const SecurityCenterPage = lazy(() => import('./features/security-center/SecurityCenterPage.js').then((m) => ({ default: m.SecurityCenterPage })));
+const AuditPage = lazy(() => import('./features/audit/AuditPage.js').then((m) => ({ default: m.AuditPage })));
+const SqlInjectionLabPage = lazy(() => import('./features/sqli-lab/SqlInjectionLabPage.js').then((m) => ({ default: m.SqlInjectionLabPage })));
 
 const VALID_ROUTES = [
   'dashboard',
@@ -31,6 +32,10 @@ const VALID_ROUTES = [
   'sqli-lab',
   'architecture',
 ];
+
+const ArchitectureFlowPage = lazy(() => import('./features/architecture/ArchitectureFlowPage.js').then((module) => ({
+  default: module.ArchitectureFlowPage,
+})));
 
 function getTabFromUrl(): string {
   const segment = window.location.pathname.replace(/^\/+/, '').split('/')[0].toLowerCase();
@@ -127,7 +132,7 @@ function MainApp() {
   const effectiveTab = canAccessTab ? activeTab : 'dashboard';
 
   return (
-    <div className="flex min-h-screen flex-col bg-[#0b0f19] font-sans antialiased text-slate-100">
+    <div className="app-shell flex min-h-screen flex-col bg-[#0b0f19] font-sans antialiased text-slate-100">
       {/* Global Insecure Demo Banner on every page */}
       <InsecureDemoBanner />
 
@@ -139,7 +144,7 @@ function MainApp() {
           onClose={() => setSidebarOpen(false)}
         />
 
-        <div className="flex flex-1 flex-col overflow-hidden bg-[#0b0f19] bg-[radial-gradient(ellipse_80%_80%_at_50%_-20%,rgba(59,130,246,0.08),rgba(255,255,255,0))]">
+        <div className="app-content flex flex-1 flex-col overflow-hidden bg-[#0b0f19]">
           <Navbar
             onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
             activeTab={effectiveTab}
@@ -148,15 +153,30 @@ function MainApp() {
 
           <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
             <div className="mx-auto max-w-7xl">
-              {effectiveTab === 'dashboard' && <DashboardPage setActiveTab={setActiveTab} />}
-              {effectiveTab === 'classes' && <ClassesPage />}
-              {effectiveTab === 'attendance' && <AttendancePage />}
-              {effectiveTab === 'projects' && <ProjectsPage />}
-              {effectiveTab === 'users' && (user.role === 'admin' || !isSecure) && <UsersPage />}
-              {effectiveTab === 'security' && (user.role === 'admin' || !isSecure) && <SecurityCenterPage />}
-              {effectiveTab === 'audit' && (user.role === 'admin' || !isSecure) && <AuditPage />}
-              {effectiveTab === 'sqli-lab' && (user.role !== 'student' || !isSecure) && <SqlInjectionLabPage />}
-              {effectiveTab === 'architecture' && <ArchitectureFlowPage />}
+              <MotionConfig reducedMotion="user">
+                <AnimatePresence mode="wait" initial={false}>
+                  <motion.div
+                    key={effectiveTab}
+                    className="min-h-full"
+                    initial={{ opacity: 0, y: 7 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -4 }}
+                    transition={{ duration: 0.16, ease: 'easeOut' }}
+                  >
+                    <Suspense fallback={<div className="p-6 text-sm text-slate-500">Opening this section…</div>}>
+                      {effectiveTab === 'dashboard' && <DashboardPage setActiveTab={setActiveTab} />}
+                      {effectiveTab === 'classes' && <ClassesPage />}
+                      {effectiveTab === 'attendance' && <AttendancePage />}
+                      {effectiveTab === 'projects' && <ProjectsPage />}
+                      {effectiveTab === 'users' && (user.role === 'admin' || !isSecure) && <UsersPage />}
+                      {effectiveTab === 'security' && (user.role === 'admin' || !isSecure) && <SecurityCenterPage />}
+                      {effectiveTab === 'audit' && (user.role === 'admin' || !isSecure) && <AuditPage />}
+                      {effectiveTab === 'sqli-lab' && (user.role !== 'student' || !isSecure) && <SqlInjectionLabPage />}
+                      {effectiveTab === 'architecture' && <ArchitectureFlowPage />}
+                    </Suspense>
+                  </motion.div>
+                </AnimatePresence>
+              </MotionConfig>
             </div>
           </main>
         </div>

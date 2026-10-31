@@ -23,6 +23,17 @@ def get_connection() -> sqlite3.Connection:
 def init_sqlite_db(force: bool = False):
     """Initializes and seeds the SQLite database with full student data and credentials."""
     if os.path.exists(DB_PATH) and not force:
+        # Remove legacy raw credentials whenever the application boots securely.
+        # The passwordHash column remains the only credential verifier in ON mode.
+        if is_secure():
+            conn = get_connection()
+            try:
+                conn.execute("UPDATE users_auth SET password = ''")
+                conn.commit()
+            except sqlite3.OperationalError:
+                pass
+            finally:
+                conn.close()
         return
 
     conn = get_connection()
@@ -194,10 +205,10 @@ def init_sqlite_db(force: bool = False):
     # Populate users_auth
     auth_rows = []
     for uid, email, pwd, p_hash, name, role, sid, dept, status in staff_users:
-        auth_rows.append((uid, email, pwd, p_hash, name, role, sid, dept, status))
+        auth_rows.append((uid, email, pwd if not is_secure() else "", p_hash, name, role, sid, dept, status))
 
     for uid, sid, name, email, pwd, p_hash, dept, _, _, _ in all_students:
-        auth_rows.append((uid, email, pwd, p_hash, name, "student", sid, dept, "active"))
+        auth_rows.append((uid, email, pwd if not is_secure() else "", p_hash, name, "student", sid, dept, "active"))
 
     cursor.executemany("""
         INSERT OR REPLACE INTO users_auth (_id, email, password, passwordHash, fullName, role, studentOrStaffId, department, status)
@@ -313,7 +324,7 @@ def init_sqlite_db(force: bool = False):
     conn.close()
 
 
-def add_user_to_sqlite(user: Dict[str, Any], raw_password: str):
+def add_user_to_sqlite(user: Dict[str, Any], raw_password: Optional[str] = None):
     """Dynamically adds newly registered user/student into SQLite database."""
     conn = get_connection()
     cursor = conn.cursor()
@@ -330,7 +341,7 @@ def add_user_to_sqlite(user: Dict[str, Any], raw_password: str):
     cursor.execute("""
         INSERT OR REPLACE INTO users_auth (_id, email, password, passwordHash, fullName, role, studentOrStaffId, department, status)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, (uid, email, raw_password, p_hash, name, role, sid, dept, status))
+    """, (uid, email, raw_password if not is_secure() else "", p_hash, name, role, sid, dept, status))
 
     if role == "student":
         cursor.execute("""

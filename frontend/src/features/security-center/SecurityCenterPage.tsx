@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../auth/AuthContext.js';
 import { useSecurityMode } from './SecurityModeContext.js';
 import { apiRequest } from '../../lib/api.js';
-import { onSecurityEvent } from '../../lib/socket.js';
+import { onSecurityEvent } from '../../lib/liveUpdates.js';
 import { SecurityEvent, ScannerFinding, SecuritySeverity, SecurityCategory } from '../../types/index.js';
 import {
   ShieldAlert,
@@ -56,9 +56,9 @@ export const SecurityCenterPage: React.FC = () => {
   const loadData = async () => {
     try {
       const [sData, eData, fData] = await Promise.all([
-        apiRequest('/api/v1/security/stats'),
-        apiRequest<{ items: SecurityEvent[] }>('/api/v1/security/events?limit=100'),
-        apiRequest<{ items: ScannerFinding[] }>('/api/v1/security/scanners?limit=100'),
+        apiRequest('/api/v1/security-events/stats'),
+        apiRequest<{ items: SecurityEvent[] }>('/api/v1/security-events/?limit=100'),
+        apiRequest<{ items: ScannerFinding[] }>('/api/v1/security-events/scanners?limit=100'),
       ]);
       setStats(sData);
       setEvents(eData.items || []);
@@ -71,8 +71,8 @@ export const SecurityCenterPage: React.FC = () => {
   useEffect(() => {
     loadData();
 
-    // Attach real-time SOC Socket.IO alert feed
-    const unsub = onSecurityEvent((newEvent) => {
+    // Poll the authenticated FastAPI event feed for new SOC alerts.
+    const unsubscribe = onSecurityEvent((newEvent) => {
       setEvents((prev) => [newEvent, ...prev]);
       // Update quick counts
       setStats((prev: any) => {
@@ -86,7 +86,7 @@ export const SecurityCenterPage: React.FC = () => {
       });
     });
 
-    return unsub;
+    return unsubscribe;
   }, []);
 
   const handleSelectEvent = (event: SecurityEvent) => {
@@ -98,7 +98,7 @@ export const SecurityCenterPage: React.FC = () => {
     if (!selectedEvent) return;
     setUpdatingIncident(true);
     try {
-      const updated = await apiRequest<SecurityEvent>(`/api/v1/security/events/${selectedEvent._id}`, {
+      const updated = await apiRequest<SecurityEvent>(`/api/v1/security-events/${selectedEvent._id}`, {
         method: 'PATCH',
         body: { investigationStatus: status, notes: incidentNotes },
       });
@@ -119,7 +119,7 @@ export const SecurityCenterPage: React.FC = () => {
     if (!selectedEvent) return;
     setUpdatingIncident(true);
     try {
-      const updated = await apiRequest<SecurityEvent>(`/api/v1/security/events/${selectedEvent._id}`, {
+      const updated = await apiRequest<SecurityEvent>(`/api/v1/security-events/${selectedEvent._id}`, {
         method: 'PATCH',
         body: { notes: incidentNotes },
       });
@@ -137,7 +137,7 @@ export const SecurityCenterPage: React.FC = () => {
 
   const handleUpdateFindingStatus = async (findingId: string, status: ScannerFinding['remediationStatus']) => {
     try {
-      const updated = await apiRequest<ScannerFinding>(`/api/v1/security/scanners/${findingId}`, {
+      const updated = await apiRequest<ScannerFinding>(`/api/v1/security-events/scanners/${findingId}`, {
         method: 'PATCH',
         body: { remediationStatus: status },
       });
@@ -152,7 +152,7 @@ export const SecurityCenterPage: React.FC = () => {
 
   const handleTriggerSimulatedAttack = async (type: string) => {
     try {
-      const res = await apiRequest('/api/v1/security/simulate-attack', {
+      const res = await apiRequest('/api/v1/security-events/simulate-attack', {
         method: 'POST',
         body: { type },
       });
@@ -212,7 +212,7 @@ export const SecurityCenterPage: React.FC = () => {
   const handleImportZap = async () => {
     try {
       const parsed = JSON.parse(importJsonText);
-      const res = await apiRequest('/api/v1/security/scanners/zap', {
+      const res = await apiRequest('/api/v1/security-events/scanners/zap', {
         method: 'POST',
         body: parsed,
       });
@@ -231,7 +231,7 @@ export const SecurityCenterPage: React.FC = () => {
   const handleImportBurp = async () => {
     try {
       const parsed = JSON.parse(importJsonText);
-      const res = await apiRequest('/api/v1/security/scanners/burp', {
+      const res = await apiRequest('/api/v1/security-events/scanners/burp', {
         method: 'POST',
         body: parsed,
       });

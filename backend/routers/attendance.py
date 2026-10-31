@@ -28,6 +28,53 @@ from routers.deps import get_current_user, require_roles, add_audit_log, add_sec
 router = APIRouter()
 
 
+def _verify_record(record: dict, session: Optional[dict]) -> bool:
+    if not session:
+        return False
+    return verify_attendance_hmac(
+        record.get("sessionId", ""),
+        record.get("studentId", ""),
+        record.get("status", ""),
+        session.get("date", ""),
+        record.get("integrityHmac", ""),
+    )
+
+
+def _log_tampered_record(record: dict, current_user: dict, client_ip: str):
+    resource = f"AttendanceRecord:{record['_id']}"
+    already_logged = any(
+        event.get("affectedResource") == resource
+        and event.get("eventType") in {"ATTENDANCE_RECORD_TAMPER_DETECTED", "ATTENDANCE_TAMPER_DETECTED"}
+        for event in db.security_events
+    )
+    if already_logged:
+        return
+    add_security_event({
+        "eventCategory": "integrity_failure",
+        "severity": "critical",
+        "eventType": "ATTENDANCE_RECORD_TAMPER_DETECTED",
+        "message": f"HMAC verification failed for attendance record {record['_id']}.",
+        "affectedResource": resource,
+        "outcome": "alerted",
+        "ip": client_ip,
+        "actorId": current_user["_id"],
+        "actorEmail": current_user["email"],
+        "isSimulatedDemo": True,
+        "notes": f"studentId: {record['studentId']}, session: {record['sessionId']}, stored status: {record['status']}",
+    })
+    log_tamper_event_to_sqlite(
+        record_id=record["_id"],
+        student_id=record["studentId"],
+        session_id=record["sessionId"],
+        original_status="unknown",
+        tampered_status=record.get("status", "unknown"),
+        client_ip=client_ip,
+        detected_by=current_user["_id"],
+        severity="critical",
+        notes="Stored HMAC did not match the session, student, status, or session date.",
+    )
+
+
 # ── GET /sessions ─────────────────────────────────────────────────────────────
 
 @router.get("/sessions")
@@ -69,6 +116,14 @@ async def create_session(
     request: Request,
     current_user=Depends(require_roles("faculty", "admin")),
 ):
+    title = body.title.strip()
+    if not title:
+        raise HTTPException(status_code=400, detail={"code": "INVALID_INPUT", "message": "A session title is required."})
+    try:
+        datetime.strptime(body.date, "%Y-%m-%d")
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail={"code": "INVALID_DATE", "message": "Session date must use YYYY-MM-DD format."})
+
     cls = next((c for c in db.classes if c["_id"] == body.classId), None)
     if not cls:
         raise HTTPException(status_code=404, detail={"code": "CLASS_NOT_FOUND", "message": "Class not found."})
@@ -81,7 +136,7 @@ async def create_session(
         "_id": f"ses_{secrets.token_hex(6)}",
         "classId": body.classId,
         "date": body.date,
-        "title": body.title,
+        "title": title,
         "facultyId": current_user["_id"],
         "status": "open",
         "sessionCode": body.sessionCode or f"SEC-{secrets.randbelow(9000) + 1000}",
@@ -109,6 +164,17 @@ async def get_session(session_id: str, current_user=Depends(get_current_user)):
     session = next((s for s in db.attendance_sessions if s["_id"] == session_id), None)
     if not session:
         raise HTTPException(status_code=404, detail={"code": "SESSION_NOT_FOUND", "message": "Session not found."})
+    cls = next((c for c in db.classes if c["_id"] == session["classId"]), None)
+    if is_secure() and cls:
+        if current_user["role"] == "faculty" and cls["facultyId"] != current_user["_id"]:
+            raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "You are not assigned to this class."})
+        if current_user["role"] == "student" and not any(
+            enrollment["classId"] == session["classId"]
+            and enrollment["studentId"] == current_user["_id"]
+            and enrollment["status"] == "enrolled"
+            for enrollment in db.enrollments
+        ):
+            raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "You are not enrolled in this class."})
     return {"success": True, "data": session}
 
 
@@ -124,6 +190,10 @@ async def update_session_status(
     session = next((s for s in db.attendance_sessions if s["_id"] == session_id), None)
     if not session:
         raise HTTPException(status_code=404, detail={"code": "SESSION_NOT_FOUND", "message": "Session not found."})
+
+    cls = next((c for c in db.classes if c["_id"] == session["classId"]), None)
+    if is_secure() and current_user["role"] == "faculty" and (not cls or cls["facultyId"] != current_user["_id"]):
+        raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "You are not assigned to this class."})
 
     if body.status not in ("open", "closed"):
         raise HTTPException(status_code=400, detail={"code": "INVALID_INPUT", "message": "Status must be open or closed."})
@@ -145,6 +215,10 @@ async def get_session_records(
     if not session:
         raise HTTPException(status_code=404, detail={"code": "SESSION_NOT_FOUND", "message": "Session not found."})
 
+    cls = next((c for c in db.classes if c["_id"] == session["classId"]), None)
+    if is_secure() and current_user["role"] == "faculty" and (not cls or cls["facultyId"] != current_user["_id"]):
+        raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "You are not assigned to this class."})
+
     client_ip = request.client.host if request.client else "127.0.0.1"
     records = [r for r in db.attendance_records if r["sessionId"] == session_id]
     enriched = []
@@ -153,33 +227,13 @@ async def get_session_records(
         student = db.get_user_by_id(r["studentId"])
         rec_copy = dict(r)
 
-        # Dual-mode Tamper Detection check
+        # Verify the HMAC against the session's canonical date, not the record's
+        # creation timestamp. These dates can differ when attendance is backfilled.
         if is_secure():
-            is_valid = verify_attendance_hmac(r)
+            is_valid = _verify_record(r, session)
             if not is_valid:
                 rec_copy["isTampered"] = True
-                rec_copy["status"] = "[TAMPERED RECORD DETECTED]"
-                # Send Admin an alert log with IP, time, user ID, and what changed
-                add_security_event({
-                    "eventCategory": "integrity_failure", "severity": "critical",
-                    "eventType": "ATTENDANCE_RECORD_TAMPER_DETECTED",
-                    "message": f"HMAC integrity verification failed on record {r['_id']} for student {r['studentId']}.",
-                    "affectedResource": f"AttendanceRecord:{r['_id']}", "outcome": "alerted",
-                    "ip": client_ip,
-                    "actorId": current_user["_id"], "actorEmail": current_user["email"],
-                    "notes": f"Stored HMAC does not match canonical fields: session={r['sessionId']}, status={r['status']}",
-                })
-                log_tamper_event_to_sqlite(
-                    record_id=r["_id"],
-                    student_id=r["studentId"],
-                    session_id=r["sessionId"],
-                    original_status="absent",
-                    tampered_status=r.get("status", "unknown"),
-                    client_ip=client_ip,
-                    detected_by=current_user["_id"],
-                    severity="critical",
-                    notes=f"Stored HMAC does not match canonical fields: session={r['sessionId']}, status={r['status']}",
-                )
+                _log_tampered_record(r, current_user, client_ip)
         else:
             # DEMO-ONLY INSECURE PATH: No tamper detection, modified status returned without alert
             rec_copy["isTampered"] = False
@@ -210,6 +264,21 @@ async def mark_attendance(
     cls = next((c for c in db.classes if c["_id"] == session["classId"]), None)
     if is_secure() and current_user["role"] == "faculty" and cls and cls["facultyId"] != current_user["_id"]:
         raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "You are not the assigned instructor for this class."})
+    if not cls:
+        raise HTTPException(status_code=404, detail={"code": "CLASS_NOT_FOUND", "message": "The attendance class no longer exists."})
+
+    if is_secure():
+        student = db.get_user_by_id(body.studentId)
+        is_enrolled = student and student.get("role") == "student" and any(
+            enrollment["classId"] == session["classId"]
+            and enrollment["studentId"] == body.studentId
+            and enrollment["status"] == "enrolled"
+            for enrollment in db.enrollments
+        )
+        if not is_enrolled:
+            raise HTTPException(status_code=403, detail={"code": "NOT_ENROLLED", "message": "This student is not enrolled in the selected class."})
+        if any(record["sessionId"] == session_id and record["studentId"] == body.studentId for record in db.attendance_records):
+            raise HTTPException(status_code=409, detail={"code": "ALREADY_MARKED", "message": "Attendance already exists. Use Correct to change the status."})
 
     if body.status not in ("present", "absent", "late"):
         raise HTTPException(status_code=400, detail={"code": "INVALID_INPUT", "message": "Status must be present, absent, or late."})
@@ -236,7 +305,20 @@ async def mark_attendance(
         "createdAt": now,
         "updatedAt": now,
     }
+    record["integrityVerified"] = is_secure() and _verify_record(record, session)
     db.attendance_records.append(record)
+
+    add_audit_log({
+        "actorId": current_user["_id"],
+        "actorEmail": current_user["email"],
+        "actorRole": current_user["role"],
+        "action": "ATTENDANCE_MARKED",
+        "resourceType": "AttendanceRecord",
+        "resourceId": record["_id"],
+        "details": {"sessionId": session_id, "studentId": body.studentId, "status": body.status},
+        "outcome": "success",
+        "ip": request.client.host if request.client else "127.0.0.1",
+    })
 
     student = db.get_user_by_id(body.studentId)
     if student:
@@ -271,7 +353,7 @@ async def correct_attendance(
     session = next((s for s in db.attendance_sessions if s["_id"] == record["sessionId"]), None)
     cls = next((c for c in db.classes if c["_id"] == record["classId"]), None)
 
-    if is_secure() and current_user["role"] == "faculty" and cls and cls["facultyId"] != current_user["_id"]:
+    if is_secure() and current_user["role"] == "faculty" and (not cls or cls["facultyId"] != current_user["_id"]):
         raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "You can only correct records for your classes."})
 
     if body.status not in ("present", "absent", "late"):
@@ -346,22 +428,35 @@ async def my_records(
         sessions = [s for s in db.attendance_sessions if s["classId"] == enr["classId"]]
         records_in_class = [r for r in student_records if r["classId"] == enr["classId"]]
 
-        present_count = sum(1 for r in records_in_class if r["status"] == "present")
-        late_count = sum(1 for r in records_in_class if r["status"] == "late")
-        absent_count = sum(1 for r in records_in_class if r["status"] == "absent")
-        total_recorded = len(records_in_class)
+        enriched_records = []
+        for record in records_in_class:
+            session = next((item for item in sessions if item["_id"] == record["sessionId"]), None)
+            copied_record = dict(record)
+            if is_secure() and not _verify_record(record, session):
+                copied_record["isTampered"] = True
+                _log_tampered_record(
+                    record,
+                    current_user,
+                    request.client.host if request.client else "127.0.0.1",
+                )
+            else:
+                copied_record["integrityVerified"] = is_secure()
+            enriched_records.append({
+                **copied_record,
+                "sessionTitle": session["title"] if session else "Session",
+                "sessionDate": session["date"] if session else record["createdAt"][:10],
+            })
 
+        trusted_records = [
+            record for record in enriched_records
+            if not record.get("isTampered")
+        ]
+        present_count = sum(1 for r in trusted_records if r["status"] == "present")
+        late_count = sum(1 for r in trusted_records if r["status"] == "late")
+        absent_count = sum(1 for r in trusted_records if r["status"] == "absent")
+        total_recorded = len(trusted_records)
         weighted = present_count + late_count * 0.5
         pct = round((weighted / total_recorded) * 100) if total_recorded > 0 else 100
-
-        enriched_records = []
-        for r in records_in_class:
-            s = next((ses for ses in sessions if ses["_id"] == r["sessionId"]), None)
-            enriched_records.append({
-                **r,
-                "sessionTitle": s["title"] if s else "Session",
-                "sessionDate": s["date"] if s else r["createdAt"][:10],
-            })
 
         class_breakdown.append({
             "classId": enr["classId"],
@@ -373,6 +468,7 @@ async def my_records(
             "lateCount": late_count,
             "absentCount": absent_count,
             "attendancePercentage": pct,
+            "tamperedCount": len(enriched_records) - len(trusted_records),
             "records": enriched_records,
         })
 
@@ -410,33 +506,13 @@ async def verify_integrity(request: Request, current_user=Depends(require_roles(
     for record in db.attendance_records:
         session = next((s for s in db.attendance_sessions if s["_id"] == record["sessionId"]), None)
         date = session["date"] if session else record["createdAt"][:10]
-        is_valid = verify_attendance_hmac(record)
+        is_valid = _verify_record(record, session)
         total_checked += 1
         if not is_valid:
             tampered_count += 1
             record["isTampered"] = True
             tampered_ids.append(record["_id"])
-            add_security_event({
-                "eventCategory": "integrity_failure", "severity": "critical",
-                "eventType": "ATTENDANCE_TAMPER_DETECTED",
-                "message": f"HMAC signature mismatch on AttendanceRecord:{record['_id']}. What changed: status={record['status']}.",
-                "affectedResource": f"AttendanceRecord:{record['_id']}", "outcome": "alerted",
-                "ip": client_ip,
-                "actorId": current_user["_id"], "actorEmail": current_user["email"],
-                "isSimulatedDemo": True,
-                "notes": f"studentId: {record['studentId']}, session: {record['sessionId']}, status: {record['status']}",
-            })
-            log_tamper_event_to_sqlite(
-                record_id=record["_id"],
-                student_id=record["studentId"],
-                session_id=record["sessionId"],
-                original_status="absent",
-                tampered_status=record["status"],
-                client_ip=client_ip,
-                detected_by=current_user["_id"],
-                severity="critical",
-                notes=f"Read-time sweep HMAC verification failure: status={record['status']}",
-            )
+            _log_tampered_record(record, current_user, client_ip)
 
     return {"success": True, "data": {
         "totalChecked": total_checked,

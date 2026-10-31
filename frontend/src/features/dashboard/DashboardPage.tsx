@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../auth/AuthContext.js';
 import { useSecurityMode } from '../security-center/SecurityModeContext.js';
 import { apiRequest } from '../../lib/api.js';
+import { Badge } from '../../components/ui/Badge.js';
+import { Card } from '../../components/ui/Card.js';
 import {
   ShieldAlert,
   ShieldCheck,
@@ -45,12 +47,12 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ setActiveTab }) =>
       setLoading(true);
       try {
         if (user?.role === 'admin') {
-          const stats = await apiRequest('/api/v1/security/stats');
+          const stats = await apiRequest('/api/v1/security-events/stats');
           const cls = await apiRequest('/api/v1/classes');
           setAdminStats(stats);
           setClasses(cls || []);
         } else if (user?.role === 'student') {
-          const att = await apiRequest('/api/v1/attendance/my');
+          const att = await apiRequest('/api/v1/attendance/my-records');
           const cls = await apiRequest('/api/v1/classes');
           const proj = await apiRequest('/api/v1/projects');
           setStudentSummary(att);
@@ -86,7 +88,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ setActiveTab }) =>
   return (
     <div className="space-y-6">
       {/* ── Top Executive Cyber Command Banner ─────────────────────────────── */}
-      <div className="relative overflow-hidden rounded-2xl border border-slate-800/80 bg-gradient-to-r from-slate-900/95 via-slate-900/90 to-blue-950/40 p-6 shadow-2xl backdrop-blur-xl">
+      <Card className="relative overflow-hidden rounded-2xl border border-slate-800/80 bg-gradient-to-r from-slate-900/95 via-slate-900/90 to-blue-950/40 p-6 shadow-2xl backdrop-blur-xl">
         {/* Subtle decorative glow accents */}
         <div className="pointer-events-none absolute -right-10 -top-10 h-64 w-64 rounded-full bg-blue-500/10 blur-3xl" />
         <div className="pointer-events-none absolute -left-10 -bottom-10 h-64 w-64 rounded-full bg-emerald-500/10 blur-3xl" />
@@ -94,17 +96,11 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ setActiveTab }) =>
         <div className="relative z-10 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="space-y-1.5">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-blue-500/30 bg-blue-500/10 px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wider text-blue-400">
+              <Badge tone="info">
                 <Radio className="h-3 w-3 animate-pulse text-blue-400" />
                 Zero-Trust SOC Active
-              </span>
-              <span
-                className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wider border ${
-                  isSecure
-                    ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400'
-                    : 'border-red-500/40 bg-red-500/15 text-red-400 animate-pulse'
-                }`}
-              >
+              </Badge>
+              <Badge tone={isSecure ? 'success' : 'danger'}>
                 {isSecure ? (
                   <>
                     <ShieldCheck className="h-3 w-3 text-emerald-400" />
@@ -116,7 +112,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ setActiveTab }) =>
                     Security Mode: OFF (Demo Vulnerable)
                   </>
                 )}
-              </span>
+              </Badge>
             </div>
 
             <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white">
@@ -166,7 +162,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ setActiveTab }) =>
             )}
           </div>
         </div>
-      </div>
+      </Card>
 
       {/* ── 4 Cryptographic Security Pillars (The Hackathon Core) ─────────── */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">

@@ -10,6 +10,7 @@ Supports:
 import os
 import base64
 import json
+import hashlib
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.asymmetric import rsa, padding
 from cryptography.hazmat.primitives import hashes
@@ -22,6 +23,57 @@ _RSA_PRIVATE_KEY = rsa.generate_private_key(
     key_size=2048,
 )
 _RSA_PUBLIC_KEY = _RSA_PRIVATE_KEY.public_key()
+
+
+def transport_public_key_pem() -> str:
+    """Public key used by browsers to wrap their short-lived transport AES key."""
+    from cryptography.hazmat.primitives import serialization
+
+    return _RSA_PUBLIC_KEY.public_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PublicFormat.SubjectPublicKeyInfo,
+    ).decode("ascii")
+
+
+def unwrap_transport_key(wrapped_key_b64: str) -> bytes:
+    wrapped_key = base64.b64decode(wrapped_key_b64, validate=True)
+    return _RSA_PRIVATE_KEY.decrypt(
+        wrapped_key,
+        padding.OAEP(
+            mgf=padding.MGF1(algorithm=hashes.SHA256()),
+            algorithm=hashes.SHA256(),
+            label=b"securecampus_transport_key_v1",
+        ),
+    )
+
+
+def encrypt_transport_payload(plaintext: str, transport_key: bytes) -> str:
+    nonce = os.urandom(12)
+    ciphertext = AESGCM(transport_key).encrypt(
+        nonce,
+        plaintext.encode("utf-8"),
+        associated_data=b"securecampus_transport_v1",
+    )
+    envelope = {
+        "scheme": "AES-256-GCM",
+        "nonce": base64.b64encode(nonce).decode("ascii"),
+        "ciphertext": base64.b64encode(ciphertext).decode("ascii"),
+    }
+    encoded = base64.b64encode(json.dumps(envelope, separators=(",", ":")).encode("utf-8")).decode("ascii")
+    return "TRANSPORT:AES-GCM:" + encoded
+
+
+def decrypt_transport_payload(envelope: str, transport_key: bytes) -> str:
+    if not envelope.startswith("TRANSPORT:AES-GCM:"):
+        raise ValueError("Message is missing its encrypted transport envelope.")
+    encoded = envelope.removeprefix("TRANSPORT:AES-GCM:")
+    payload = json.loads(base64.b64decode(encoded, validate=True).decode("utf-8"))
+    plaintext = AESGCM(transport_key).decrypt(
+        base64.b64decode(payload["nonce"], validate=True),
+        base64.b64decode(payload["ciphertext"], validate=True),
+        associated_data=b"securecampus_transport_v1",
+    )
+    return plaintext.decode("utf-8")
 
 # Legacy AES fallback key
 _CHAT_KEY = (settings.secret_key.encode("utf-8").ljust(32, b"0"))[:32]

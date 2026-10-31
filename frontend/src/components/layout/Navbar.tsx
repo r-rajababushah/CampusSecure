@@ -2,8 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../features/auth/AuthContext.js';
 import { useSecurityMode } from '../../features/security-center/SecurityModeContext.js';
 import { apiRequest } from '../../lib/api.js';
-import { onNotification } from '../../lib/socket.js';
+import { onNotification } from '../../lib/liveUpdates.js';
 import { AppNotification } from '../../types/index.js';
+import { Button } from '../ui/Button.js';
 import {
   Shield,
   ShieldAlert,
@@ -35,9 +36,9 @@ export const Navbar: React.FC<NavbarProps> = ({ onToggleSidebar, activeTab, setA
   const fetchNotifications = async () => {
     if (!user) return;
     try {
-      const data = await apiRequest<{ unreadCount: number; items: AppNotification[] }>('/api/v1/notifications');
-      setNotifications(data.items || []);
-      setUnreadCount(data.unreadCount || 0);
+      const items = await apiRequest<AppNotification[]>('/api/v1/notifications/');
+      setNotifications(items || []);
+      setUnreadCount((items || []).filter((item) => !item.read).length);
     } catch {
       // Ignore network errors on unauthenticated state
     }
@@ -45,16 +46,19 @@ export const Navbar: React.FC<NavbarProps> = ({ onToggleSidebar, activeTab, setA
 
   useEffect(() => {
     fetchNotifications();
-    const unsub = onNotification((newNotif) => {
-      setNotifications((prev) => [newNotif, ...prev]);
-      setUnreadCount((c) => c + 1);
-    });
-    return unsub;
+    let unsubscribe: (() => void) | undefined;
+    if (user) {
+      unsubscribe = onNotification((newNotif) => {
+        setNotifications((prev) => [newNotif, ...prev]);
+        setUnreadCount((c) => c + 1);
+      });
+    }
+    return () => unsubscribe?.();
   }, [user]);
 
   const markAllRead = async () => {
     try {
-      await apiRequest('/api/v1/notifications/read-all', { method: 'POST' });
+      await apiRequest('/api/v1/notifications/read-all', { method: 'PATCH' });
       setUnreadCount(0);
       setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
     } catch {
@@ -97,33 +101,27 @@ export const Navbar: React.FC<NavbarProps> = ({ onToggleSidebar, activeTab, setA
 
       <div className="flex items-center gap-2 sm:gap-3">
         {/* Interactive Architecture Flow View Button */}
-        <button
+        <Button
           onClick={() => setActiveTab('architecture')}
-          className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold transition border ${
-            activeTab === 'architecture'
-              ? 'border-cyan-500/50 bg-cyan-500/20 text-cyan-300 shadow-lg shadow-cyan-500/10'
-              : 'border-slate-800 bg-slate-900/70 text-slate-300 hover:bg-slate-800 hover:text-white'
-          }`}
+          variant={activeTab === 'architecture' ? 'primary' : 'secondary'}
+          size="sm"
           title="Open interactive Zero-Trust Architecture Flow"
         >
-          <Layers className="h-3.5 w-3.5 text-cyan-400" />
+          <Layers className="h-3.5 w-3.5" />
           <span className="hidden md:inline">Architecture Flow</span>
-        </button>
+        </Button>
 
         {/* ========================================================================= */}
         {/* SECURITY ON / OFF TOGGLE SWITCH (Admin Control & Status Indicator)       */}
         {/* ========================================================================= */}
         <div className="flex items-center">
           {user?.role === 'admin' ? (
-            <button
+            <Button
               onClick={() => toggleSecurityMode()}
               disabled={modeLoading}
               title={`Click to switch Security Mode ${isSecure ? 'OFF (Vulnerable Demo)' : 'ON (Protected)'}`}
-              className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold transition shadow-lg border ${
-                isSecure
-                  ? 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25'
-                  : 'border-red-500/50 bg-red-500/20 text-red-300 hover:bg-red-500/30 animate-pulse'
-              }`}
+              variant={isSecure ? 'success' : 'danger'}
+              size="sm"
             >
               {isSecure ? (
                 <>
@@ -136,7 +134,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onToggleSidebar, activeTab, setA
                   <span>SECURITY: OFF</span>
                 </>
               )}
-            </button>
+            </Button>
           ) : (
             <div
               className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold border ${
@@ -161,7 +159,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onToggleSidebar, activeTab, setA
         </div>
 
         {/* Institutional Account / Role Switcher */}
-        <div className="relative">
+        {user?.role === 'admin' && <div className="relative">
           <button
             onClick={() => setShowRoleSwitcher(!showRoleSwitcher)}
             className="flex items-center gap-1.5 rounded-xl border border-slate-800 bg-slate-900/80 px-3 py-1.5 text-xs font-semibold text-slate-200 transition hover:bg-slate-800 hover:border-slate-700"
@@ -227,7 +225,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onToggleSidebar, activeTab, setA
               </div>
             </div>
           )}
-        </div>
+        </div>}
 
         {/* In-app Notifications Dropdown */}
         <div className="relative">
