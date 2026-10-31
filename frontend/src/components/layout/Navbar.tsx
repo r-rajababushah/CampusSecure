@@ -4,6 +4,7 @@ import { useSecurityMode } from '../../features/security-center/SecurityModeCont
 import { apiRequest } from '../../lib/api.js';
 import { onNotification } from '../../lib/liveUpdates.js';
 import { AppNotification } from '../../types/index.js';
+import { Button } from '../ui/Button.js';
 import {
   Shield,
   ShieldAlert,
@@ -100,33 +101,27 @@ export const Navbar: React.FC<NavbarProps> = ({ onToggleSidebar, activeTab, setA
 
       <div className="flex items-center gap-2 sm:gap-3">
         {/* Interactive Architecture Flow View Button */}
-        <button
+        <Button
           onClick={() => setActiveTab('architecture')}
-          className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold transition border ${
-            activeTab === 'architecture'
-              ? 'border-cyan-500/50 bg-cyan-500/20 text-cyan-300 shadow-lg shadow-cyan-500/10'
-              : 'border-slate-800 bg-slate-900/70 text-slate-300 hover:bg-slate-800 hover:text-white'
-          }`}
+          variant={activeTab === 'architecture' ? 'primary' : 'secondary'}
+          size="sm"
           title="Open interactive Zero-Trust Architecture Flow"
         >
-          <Layers className="h-3.5 w-3.5 text-cyan-400" />
+          <Layers className="h-3.5 w-3.5" />
           <span className="hidden md:inline">Architecture Flow</span>
-        </button>
+        </Button>
 
         {/* ========================================================================= */}
         {/* SECURITY ON / OFF TOGGLE SWITCH (Admin Control & Status Indicator)       */}
         {/* ========================================================================= */}
         <div className="flex items-center">
           {user?.role === 'admin' ? (
-            <button
+            <Button
               onClick={() => toggleSecurityMode()}
               disabled={modeLoading}
               title={`Click to switch Security Mode ${isSecure ? 'OFF (Vulnerable Demo)' : 'ON (Protected)'}`}
-              className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold transition shadow-lg border ${
-                isSecure
-                  ? 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25'
-                  : 'border-red-500/50 bg-red-500/20 text-red-300 hover:bg-red-500/30 animate-pulse'
-              }`}
+              variant={isSecure ? 'success' : 'danger'}
+              size="sm"
             >
               {isSecure ? (
                 <>
@@ -139,7 +134,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onToggleSidebar, activeTab, setA
                   <span>SECURITY: OFF</span>
                 </>
               )}
-            </button>
+            </Button>
           ) : (
             <div
               className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold border ${
