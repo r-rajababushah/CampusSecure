@@ -10,6 +10,14 @@ export interface User {
   department: string;
   status: AccountStatus;
   lastLoginAt?: string | null;
+  securityTrace?: {
+    passwordHashAlgorithm?: string;
+    passwordHashPreview?: string;
+    passwordDatabaseField?: string;
+    rawPasswordDatabaseField?: string;
+    rawPasswordStored?: boolean;
+    storedAs?: string;
+  };
 }
 
 export interface ClassItem {
@@ -66,6 +74,7 @@ export interface AttendanceRecord {
   correctedAt?: string;
   correctedBy?: string;
   integrityHmac: string;
+  integrityVerified?: boolean;
   isTampered?: boolean;
   createdAt: string;
 }
@@ -135,6 +144,11 @@ export interface ChatMessage {
   content: string;
   isTampered?: boolean;
   integrityVerified?: boolean;
+  hmacVerified?: boolean;
+  signatureVerified?: boolean;
+  signatureAlgorithm?: string;
+  isEncryptedInStorage?: boolean;
+  rawStoredSnippet?: string;
   createdAt: string;
   readBy?: string[];
 }

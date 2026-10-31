@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../auth/AuthContext.js';
 import { apiRequest } from '../../lib/api.js';
+import { useSecurityProcess } from '../../hooks/useSecurityProcess.js';
+import { SecurityProcessModal } from '../../components/security/SecurityProcessModal.js';
 import { ClassItem, AttendanceSession, AttendanceRecord } from '../../types/index.js';
 import {
   CalendarCheck,
@@ -20,6 +22,7 @@ import {
 
 export const AttendancePage: React.FC = () => {
   const { user } = useAuth();
+  const securityProcess = useSecurityProcess();
   const [classes, setClasses] = useState<ClassItem[]>([]);
   const [selectedClassId, setSelectedClassId] = useState<string>('');
   const [sessions, setSessions] = useState<AttendanceSession[]>([]);
@@ -34,6 +37,8 @@ export const AttendancePage: React.FC = () => {
   const [showCreateSessionModal, setShowCreateSessionModal] = useState(false);
   const [sessionDate, setSessionDate] = useState(new Date().toISOString().slice(0, 10));
   const [sessionTitle, setSessionTitle] = useState('');
+  const [isCreatingSession, setIsCreatingSession] = useState(false);
+  const [createSessionError, setCreateSessionError] = useState<string | null>(null);
 
   // Correction modal
   const [correctingRecord, setCorrectingRecord] = useState<AttendanceRecord | null>(null);
@@ -48,7 +53,7 @@ export const AttendancePage: React.FC = () => {
       setLoading(true);
       try {
         if (user?.role === 'student') {
-          const myData = await apiRequest('/api/v1/attendance/my');
+          const myData = await apiRequest('/api/v1/attendance/my-records');
           setStudentSummary(myData);
         } else {
           const clsList = await apiRequest<ClassItem[]>('/api/v1/classes');
@@ -60,6 +65,7 @@ export const AttendancePage: React.FC = () => {
         }
       } catch (err: any) {
         console.error('Failed to init attendance:', err);
+        setFeedback({ message: err.message || 'Attendance could not be loaded. Check your account role and course enrollment.', type: 'error' });
       } finally {
         setLoading(false);
       }
@@ -84,7 +90,7 @@ export const AttendancePage: React.FC = () => {
       }
 
       if (sess && sess.length > 0) {
-        handleSelectSession(sess[0]);
+        await handleSelectSession(sess[0]);
       } else {
         setSelectedSession(null);
         setSessionRecords([]);
@@ -112,37 +118,66 @@ export const AttendancePage: React.FC = () => {
 
   const handleCreateSession = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedClassId || !sessionTitle) return;
+    const title = sessionTitle.trim();
+    if (!selectedClassId) {
+      setCreateSessionError('Select a course before creating an attendance session.');
+      return;
+    }
+    if (!title) {
+      setCreateSessionError('Enter a session title.');
+      return;
+    }
 
+    setIsCreatingSession(true);
+    setCreateSessionError(null);
     try {
       const created = await apiRequest<AttendanceSession>('/api/v1/attendance/sessions', {
         method: 'POST',
         body: {
           classId: selectedClassId,
           date: sessionDate,
-          title: sessionTitle,
+          title,
         },
       });
+      setSessions((existing) => [created, ...existing.filter((session) => session._id !== created._id)]
+        .sort((left, right) => right.date.localeCompare(left.date)));
+      setSelectedSession(created);
+      setSessionRecords([]);
+      // Refresh the selected course before focusing the newly created session.
+      await loadClassSessions(selectedClassId);
+      await handleSelectSession(created);
       setShowCreateSessionModal(false);
       setSessionTitle('');
+      setCreateSessionError(null);
       setFeedback({
-        message: `Attendance session "${created.title}" initialized.`,
+        message: `Attendance session "${created.title}" initialized for ${classes.find((course) => course._id === selectedClassId)?.code || 'the selected course'}.`,
         type: 'success',
       });
-      await loadClassSessions(selectedClassId);
-      handleSelectSession(created);
     } catch (err: any) {
-      setFeedback({ message: err.message || 'Failed to create session.', type: 'error' });
+      const message = err.message || 'Failed to create session.';
+      setCreateSessionError(message);
+      setFeedback({ message, type: 'error' });
+    } finally {
+      setIsCreatingSession(false);
     }
   };
 
   const handleMarkAttendance = async (studentId: string, status: 'present' | 'absent' | 'late') => {
     if (!selectedSession) return;
     try {
-      const record = await apiRequest<AttendanceRecord>(`/api/v1/attendance/sessions/${selectedSession._id}/records`, {
-        method: 'POST',
-        body: { studentId, status },
-      });
+      const record = await securityProcess.run({
+        title: 'Sealing attendance record',
+        subtitle: 'Attendance is bound to the selected session and protected against unauthorized edits.',
+        steps: [
+          'Check teacher role, class assignment, and student enrollment',
+          'Bind student, session, status, and session date into canonical data',
+          'Compute HMAC-SHA-256 with the server secret',
+          'Save record and audit who marked it',
+          'Verify the HMAC when student or teacher views the record',
+        ],
+      }, () => apiRequest<AttendanceRecord>(`/api/v1/attendance/sessions/${selectedSession._id}/records`, {
+        method: 'POST', body: { studentId, status },
+      }), (created) => `Attendance recorded as ${created.status.toUpperCase()}. HMAC verified: ${created.integrityVerified ? 'yes' : 'no'}.`);
       setFeedback({
         message: `Marked ${status.toUpperCase()} with HMAC signature: ${record.integrityHmac.slice(0, 14)}...`,
         type: 'success',
@@ -185,7 +220,7 @@ export const AttendancePage: React.FC = () => {
   const handleRunIntegrityCheck = async () => {
     try {
       const res = await apiRequest<any>('/api/v1/attendance/verify', { method: 'POST' });
-      const verifyData = res.data || res;
+      const verifyData = res;
       setIntegrityResult(verifyData);
       if (verifyData.tamperedCount > 0) {
         setFeedback({
@@ -210,17 +245,17 @@ export const AttendancePage: React.FC = () => {
       const res = await apiRequest<any>('/api/v1/attendance/simulate-tampering', { method: 'POST' });
       // Automatically run HMAC integrity verification on simulation
       const verifyRes = await apiRequest<any>('/api/v1/attendance/verify', { method: 'POST' });
-      const verifyData = verifyRes.data || verifyRes;
+      const verifyData = verifyRes;
       setIntegrityResult(verifyData);
 
       if (verifyData.tamperedCount > 0) {
         setFeedback({
-          message: `🚨 TAMPER DETECTED: Record ${res.data?.recordId || ''} altered to '${res.data?.newStatus || ''}'. Immediate HMAC check caught ${verifyData.tamperedCount} tampered record(s)! Alert sent to SOC & logged to SQLite attendance_tamper_logs.`,
+          message: `🚨 TAMPER DETECTED: Record ${res.recordId || ''} altered to '${res.newStatus || ''}'. Immediate HMAC check caught ${verifyData.tamperedCount} tampered record(s)! Alert sent to SOC & logged to SQLite attendance_tamper_logs.`,
           type: 'error',
         });
       } else {
         setFeedback({
-          message: res.message || 'Simulation executed in OFF mode: Modifying status did not trigger alert (security checks bypassed).',
+          message: `Simulation executed in OFF mode: record ${res.recordId || ''} changed to '${res.newStatus || ''}' without integrity verification.`,
           type: 'warning',
         });
       }
@@ -261,6 +296,8 @@ export const AttendancePage: React.FC = () => {
         </div>
 
         <div className="space-y-6">
+          {feedback?.type === 'error' && <div role="alert" className="rounded-lg border border-rose-700/50 bg-rose-950/30 p-3 text-sm text-rose-200">{feedback.message}</div>}
+          {!studentSummary?.classes?.length && <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-5 text-sm text-slate-300">No course attendance is linked to this account yet. Newly registered students are enrolled in CS-401 automatically.</div>}
           {studentSummary?.classes?.map((c: any) => (
             <div key={c.classId} className="rounded-xl border border-slate-800 bg-slate-900/80 p-5 shadow-sm backdrop-blur">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between border-b border-slate-800 pb-3">
@@ -291,7 +328,7 @@ export const AttendancePage: React.FC = () => {
                 ) : (
                   <div className="divide-y divide-slate-800">
                     {c.records.map((r: any) => (
-                      <div key={r._id} className="py-2.5 flex flex-col sm:flex-row sm:items-center sm:justify-between text-xs">
+                      <div key={r._id} className={`py-2.5 flex flex-col sm:flex-row sm:items-center sm:justify-between text-xs ${r.isTampered ? 'rounded bg-rose-950/40 px-2' : ''}`}>
                         <div>
                           <div className="font-medium text-slate-200">{r.sessionTitle}</div>
                           <div className="text-[11px] text-slate-400">
@@ -316,9 +353,9 @@ export const AttendancePage: React.FC = () => {
                             {r.status === 'absent' && <XCircle className="h-3.5 w-3.5 text-rose-400" />}
                             {r.status.toUpperCase()}
                           </span>
-                          <span className="font-mono text-[10px] text-slate-400" title={`HMAC: ${r.integrityHmac}`}>
+                          {r.isTampered ? <span className="font-bold text-rose-300">TAMPER DETECTED · excluded from percentage</span> : <span className="font-mono text-[10px] text-slate-400" title={`HMAC: ${r.integrityHmac}`}>
                             HMAC: {r.integrityHmac.slice(0, 10)}...
-                          </span>
+                          </span>}
                         </div>
                       </div>
                     ))}
@@ -328,6 +365,7 @@ export const AttendancePage: React.FC = () => {
             </div>
           ))}
         </div>
+        <SecurityProcessModal process={securityProcess.process} onClose={securityProcess.close} />
       </div>
     );
   }
@@ -370,7 +408,7 @@ export const AttendancePage: React.FC = () => {
           </button>
 
           <button
-            onClick={() => setShowCreateSessionModal(true)}
+            onClick={() => { setCreateSessionError(null); setShowCreateSessionModal(true); }}
             className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3.5 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-blue-500 transition"
           >
             <Plus className="h-4 w-4" />
@@ -405,7 +443,7 @@ export const AttendancePage: React.FC = () => {
         >
           {classes.map((c) => (
             <option key={c._id} value={c._id}>
-              {c.code}: {c.name} ({c.enrollmentCount ?? c.studentCount ?? 0} students)
+              {c.code}: {c.name} ({c.enrollmentCount ?? 0} students)
             </option>
           ))}
         </select>
@@ -420,7 +458,7 @@ export const AttendancePage: React.FC = () => {
         <div className="space-y-3 lg:col-span-4">
           <div className="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center justify-between">
             <span>Sessions ({sessions.length})</span>
-            <span className="text-[10px] text-slate-500 font-mono">OCTOBER 2026</span>
+            <span className="text-[10px] text-slate-500 font-mono">COURSE SESSIONS</span>
           </div>
           {sessions.length === 0 ? (
             <div className="rounded-xl border border-slate-800 bg-slate-900/80 p-6 text-center text-xs text-slate-500">
@@ -609,14 +647,21 @@ export const AttendancePage: React.FC = () => {
                 <X className="h-4 w-4" />
               </button>
             </div>
+            {createSessionError && <div role="alert" className="mt-3 rounded-lg border border-rose-700/50 bg-rose-950/40 px-3 py-2 text-xs text-rose-200">{createSessionError}</div>}
             <form onSubmit={handleCreateSession} className="mt-4 space-y-3">
+              <div>
+                <label htmlFor="attendance-session-course" className="block text-xs font-medium text-slate-300">Course</label>
+                <select id="attendance-session-course" required value={selectedClassId} onChange={(e) => { setSelectedClassId(e.target.value); setCreateSessionError(null); }} className="mt-1 block w-full rounded-md border border-slate-700 bg-slate-800 px-3 py-1.5 text-xs text-white focus:border-blue-500 focus:outline-none">
+                  {classes.map((course) => <option key={course._id} value={course._id}>{course.code}: {course.name}</option>)}
+                </select>
+              </div>
               <div>
                 <label className="block text-xs font-medium text-slate-300">Session Date</label>
                 <input
                   type="date"
                   required
                   value={sessionDate}
-                  onChange={(e) => setSessionDate(e.target.value)}
+                  onChange={(e) => { setSessionDate(e.target.value); setCreateSessionError(null); }}
                   className="mt-1 block w-full rounded-md border border-slate-700 bg-slate-800 px-3 py-1.5 text-xs text-white focus:border-blue-500 focus:outline-none"
                 />
               </div>
@@ -627,13 +672,14 @@ export const AttendancePage: React.FC = () => {
                   required
                   placeholder="e.g. Lecture 14: Threat Modeling"
                   value={sessionTitle}
-                  onChange={(e) => setSessionTitle(e.target.value)}
+                  onChange={(e) => { setSessionTitle(e.target.value); setCreateSessionError(null); }}
                   className="mt-1 block w-full rounded-md border border-slate-700 bg-slate-800 px-3 py-1.5 text-xs text-white focus:border-blue-500 focus:outline-none"
                 />
               </div>
               <div className="mt-4 flex justify-end gap-2 pt-2 border-t border-slate-800">
                 <button
                   type="button"
+                  disabled={isCreatingSession}
                   onClick={() => setShowCreateSessionModal(false)}
                   className="rounded-md border border-slate-700 bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-300 hover:bg-slate-700"
                 >
@@ -641,9 +687,10 @@ export const AttendancePage: React.FC = () => {
                 </button>
                 <button
                   type="submit"
-                  className="rounded-md bg-blue-600 px-3.5 py-1.5 text-xs font-medium text-white hover:bg-blue-500"
+                  disabled={isCreatingSession || !selectedClassId || !sessionTitle.trim()}
+                  className="rounded-md bg-blue-600 px-3.5 py-1.5 text-xs font-medium text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  Initialize Session
+                  {isCreatingSession ? 'Initializing…' : 'Initialize Session'}
                 </button>
               </div>
             </form>
@@ -706,6 +753,7 @@ export const AttendancePage: React.FC = () => {
           </div>
         </div>
       )}
+      <SecurityProcessModal process={securityProcess.process} onClose={securityProcess.close} />
     </div>
   );
 };

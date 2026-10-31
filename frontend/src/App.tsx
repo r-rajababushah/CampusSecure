@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { lazy, Suspense, useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './features/auth/AuthContext.js';
 import { SecurityModeProvider, useSecurityMode } from './features/security-center/SecurityModeContext.js';
 import { LoginPage } from './features/auth/LoginPage.js';
@@ -17,7 +17,6 @@ import { UsersPage } from './features/users/UsersPage.js';
 import { SecurityCenterPage } from './features/security-center/SecurityCenterPage.js';
 import { AuditPage } from './features/audit/AuditPage.js';
 import { SqlInjectionLabPage } from './features/sqli-lab/SqlInjectionLabPage.js';
-import { ArchitectureFlowPage } from './features/architecture/ArchitectureFlowPage.js';
 import { AlertTriangle, ShieldAlert, ShieldCheck } from 'lucide-react';
 
 const VALID_ROUTES = [
@@ -31,6 +30,10 @@ const VALID_ROUTES = [
   'sqli-lab',
   'architecture',
 ];
+
+const ArchitectureFlowPage = lazy(() => import('./features/architecture/ArchitectureFlowPage.js').then((module) => ({
+  default: module.ArchitectureFlowPage,
+})));
 
 function getTabFromUrl(): string {
   const segment = window.location.pathname.replace(/^\/+/, '').split('/')[0].toLowerCase();
@@ -156,7 +159,11 @@ function MainApp() {
               {effectiveTab === 'security' && (user.role === 'admin' || !isSecure) && <SecurityCenterPage />}
               {effectiveTab === 'audit' && (user.role === 'admin' || !isSecure) && <AuditPage />}
               {effectiveTab === 'sqli-lab' && (user.role !== 'student' || !isSecure) && <SqlInjectionLabPage />}
-              {effectiveTab === 'architecture' && <ArchitectureFlowPage />}
+              {effectiveTab === 'architecture' && (
+                <Suspense fallback={<div className="p-6 text-sm text-slate-400">Loading architecture view…</div>}>
+                  <ArchitectureFlowPage />
+                </Suspense>
+              )}
             </div>
           </main>
         </div>

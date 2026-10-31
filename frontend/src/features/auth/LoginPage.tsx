@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { useAuth } from './AuthContext.js';
 import { apiRequest } from '../../lib/api.js';
+import { useSecurityProcess } from '../../hooks/useSecurityProcess.js';
+import { SecurityProcessModal } from '../../components/security/SecurityProcessModal.js';
 import {
   Shield,
   ShieldCheck,
@@ -35,7 +37,8 @@ const DEPARTMENTS = [
 ];
 
 export const LoginPage: React.FC = () => {
-  const { login } = useAuth();
+  const { login, activateUser } = useAuth();
+  const securityProcess = useSecurityProcess();
   const [tab, setTab] = useState<Tab>('login');
 
   // ── Login state ────────────────────────────────────────────────────────────
@@ -53,6 +56,40 @@ export const LoginPage: React.FC = () => {
   const [regRole, setRegRole] = useState<'student' | 'faculty'>('student');
   const [regError, setRegError] = useState<string | null>(null);
   const [isRegistering, setIsRegistering] = useState(false);
+  const [registrationComplete, setRegistrationComplete] = useState(false);
+
+  const runLoginWalkthrough = async (loginEmail: string, loginPassword: string) => securityProcess.run({
+    title: 'Signing in securely',
+    subtitle: 'Your password stays masked. The server checks its salted verifier and creates a role-bound session.',
+    minDurationMs: 9000,
+    steps: [
+      'Normalize the account email for lookup',
+      'Find the identity record in the user database',
+      'Load the salted password verifier',
+      'Derive and compare password verifier in constant time',
+      'Check account status and failed-login lockout',
+      'Rotate the session identifier after successful verification',
+      'Create a CSRF token and role-bound session',
+      'Record the authentication event in the audit log',
+      'Open the campus workspace',
+    ],
+    visual: [
+      { label: 'Submitted email', value: loginEmail.trim().toLowerCase() },
+      { label: 'Password input', value: '•••••••• (masked in this view)' },
+      { label: 'Database lookup', value: 'users_auth.email → account record' },
+      { label: 'Password check', value: 'waiting for server verification…' },
+    ],
+    resolveVisual: (account: Awaited<ReturnType<typeof login>>) => [
+      { label: 'Submitted email', value: account.email },
+      { label: 'Password input', value: '•••••••• (never displayed)' },
+      { label: 'Database identity', value: `users_auth._id = ${account.id}` },
+      { label: 'Student/staff ID', value: account.studentOrStaffId },
+      { label: 'Verifier algorithm', value: account.securityTrace?.passwordHashAlgorithm || 'salted password verifier' },
+      { label: 'Verifier stored at', value: account.securityTrace?.passwordDatabaseField || 'users_auth.passwordHash' },
+      { label: 'Verifier preview', value: account.securityTrace?.passwordHashPreview || '<salt and hash redacted>' },
+      { label: 'Raw password column', value: account.securityTrace?.rawPasswordStored ? 'demo mode only' : 'empty in Secure mode' },
+    ],
+  }, () => login(loginEmail, loginPassword, { deferActivation: true }), (account) => `Authenticated ${account.email} as ${account.role}. Password verified against a salted one-way hash.`);
 
   // ── Login handlers ─────────────────────────────────────────────────────────
   const handleLoginSubmit = async (e: React.FormEvent) => {
@@ -64,7 +101,9 @@ export const LoginPage: React.FC = () => {
     setLoginError(null);
     setIsSubmitting(true);
     try {
-      await login(email, password);
+      sessionStorage.removeItem('campus_message_transport_key');
+      const authenticatedUser = await runLoginWalkthrough(email, password);
+      activateUser(authenticatedUser);
     } catch (err: any) {
       setLoginError(err.message || 'Authentication failed. Please check credentials.');
     } finally {
@@ -78,7 +117,8 @@ export const LoginPage: React.FC = () => {
     setLoginError(null);
     setIsSubmitting(true);
     try {
-      await login(demoEmail, demoPass);
+      const authenticatedUser = await runLoginWalkthrough(demoEmail, demoPass);
+      activateUser(authenticatedUser);
     } catch (err: any) {
       setLoginError(err.message || 'Quick login failed.');
     } finally {
@@ -93,12 +133,47 @@ export const LoginPage: React.FC = () => {
 
     if (!regFullName.trim()) { setRegError('Full name is required.'); return; }
     if (!regEmail.trim() || !regEmail.includes('@')) { setRegError('A valid email address is required.'); return; }
-    if (regPassword.length < 8) { setRegError('Password must contain at least 8 characters.'); return; }
+    if (regPassword.length < 8 || !/[a-z]/.test(regPassword) || !/[A-Z]/.test(regPassword) || !/\d/.test(regPassword) || !/[!@#$%^&*]/.test(regPassword)) { setRegError('Use 8+ characters with lowercase, uppercase, a number, and one of ! @ # $ % ^ & *.'); return; }
     if (regPassword !== regConfirm) { setRegError('Passwords do not match.'); return; }
 
+    setRegistrationComplete(false);
     setIsRegistering(true);
     try {
-      await apiRequest('/api/v1/auth/register', {
+      await securityProcess.run({
+        title: 'Protecting your new account',
+        subtitle: 'Password fields are masked. Passwords are hashed for verification, never encrypted for recovery.',
+        minDurationMs: 9000,
+        steps: [
+          'Trim and normalize the account identity',
+          'Assign an internal user ID and student/staff ID',
+          'Validate password strength without displaying the password',
+          'Generate a unique cryptographic salt',
+          'Derive a one-way password verifier with the configured KDF',
+          'Write the verifier to the passwordHash database field',
+          'Leave the raw password database field empty in Secure mode',
+          'Create a role-bound authenticated session',
+          'Enroll the new student in the attendance course when applicable',
+        ],
+        visual: [
+          { label: 'Identity submitted', value: regEmail.trim().toLowerCase() },
+          { label: 'Account ID', value: 'generated securely by the server…' },
+          { label: 'Password input', value: '•••••••• (masked; never saved as readable text)' },
+          { label: 'Database field', value: 'users_auth.passwordHash' },
+          { label: 'Stored value', value: 'salted one-way verifier is being generated…' },
+          { label: 'Raw password column', value: 'users_auth.password = empty in Secure mode' },
+        ],
+        resolveVisual: (result: any) => [
+          { label: 'Identity submitted', value: result.user.email },
+          { label: 'Internal account ID', value: result.securityTrace.accountDatabaseId },
+          { label: 'Student/staff ID', value: result.user.studentOrStaffId },
+          { label: 'Identity DB fields', value: result.securityTrace.identityDatabaseFields },
+          { label: 'Password input', value: '•••••••• (masked; not returned by server)' },
+          { label: 'Hash algorithm', value: result.securityTrace.passwordHashAlgorithm },
+          { label: 'Password DB field', value: result.securityTrace.passwordDatabaseField },
+          { label: 'Stored verifier format', value: result.securityTrace.passwordHashPreview },
+          { label: 'Raw password DB field', value: `${result.securityTrace.rawPasswordDatabaseField} = ${result.securityTrace.rawPasswordStored ? 'demo-mode value only' : 'empty'}` },
+        ],
+      }, async () => apiRequest('/api/v1/auth/register', {
         method: 'POST',
         body: {
           fullName: regFullName.trim(),
@@ -107,10 +182,11 @@ export const LoginPage: React.FC = () => {
           role: regRole,
           department: regDepartment,
         },
-      });
+      }), (result: any) => `${result.securityTrace?.passwordHashAlgorithm || 'Salted password hash'} · ${result.securityTrace?.storedAs || 'hash only'}; raw password stored: ${result.securityTrace?.rawPasswordStored ? 'demo mode only' : 'no'}.`);
 
-      // Auto-login after registration
-      await login(regEmail.trim().toLowerCase(), regPassword);
+      setRegistrationComplete(true);
+      setRegPassword('');
+      setRegConfirm('');
     } catch (err: any) {
       setRegError(err.message || 'Registration failed. Please try again.');
     } finally {
@@ -142,8 +218,8 @@ export const LoginPage: React.FC = () => {
               Zero-Trust Architecture for <span className="bg-gradient-to-r from-blue-400 via-indigo-300 to-cyan-300 bg-clip-text text-transparent">Modern Campuses</span>
             </h1>
 
-            <p className="text-sm sm:text-base text-slate-300 max-w-xl leading-relaxed">
-              Enterprise student-faculty operations fortified with cryptographic HMAC integrity seals, end-to-end encrypted messaging, and autonomous SOC intrusion defense.
+              <p className="text-sm sm:text-base text-slate-300 max-w-xl leading-relaxed">
+              Student-faculty operations with cryptographic HMAC attendance seals, encrypted messaging, and security event monitoring.
             </p>
           </div>
 
@@ -164,8 +240,8 @@ export const LoginPage: React.FC = () => {
                 <Lock className="h-4 w-4" />
               </div>
               <h3 className="text-xs font-bold text-white">Hybrid RSA+AES</h3>
-              <p className="mt-1 text-[11px] text-slate-400 leading-normal">
-                E2E chat encryption wraps session keys with zero plaintext stored.
+                <p className="mt-1 text-[11px] text-slate-400 leading-normal">
+                RSA key exchange and AES-GCM protect messages in transit and at rest.
               </p>
             </div>
 
@@ -339,28 +415,30 @@ export const LoginPage: React.FC = () => {
                       onClick={() => handleQuickDemo('dr.chen@campus.edu', 'Faculty@SecurePass2026!')}
                       className="rounded-xl border border-slate-800 bg-slate-950/70 p-2.5 hover:border-emerald-500/40 hover:bg-slate-900 transition text-left group"
                     >
-                      <div className="text-xs font-bold text-white group-hover:text-emerald-300">Faculty: Prof. Chen</div>
-                      <div className="text-[10px] text-slate-400 truncate">CS-401 &amp; HMAC Seals</div>
+                      <div className="text-xs font-bold text-white group-hover:text-emerald-300">Teacher: Prof. Alan Chen</div>
+                      <div className="text-[10px] text-slate-400 truncate">dr.chen@campus.edu</div>
                     </button>
 
                     <button
                       type="button"
-                      onClick={() => handleQuickDemo('maya.patel@student.campus.edu', 'Student@SecurePass2026!')}
-                      className="rounded-xl border border-slate-800 bg-slate-950/70 p-2.5 hover:border-cyan-500/40 hover:bg-slate-900 transition text-left group"
+                      onClick={() => handleQuickDemo('prof.davis@campus.edu', 'Faculty@SecurePass2026!')}
+                      className="rounded-xl border border-slate-800 bg-slate-950/70 p-2.5 hover:border-emerald-500/40 hover:bg-slate-900 transition text-left group"
                     >
-                      <div className="text-xs font-bold text-white group-hover:text-cyan-300">Student: Maya Patel</div>
-                      <div className="text-[10px] text-slate-400 truncate">Attendance %, RSA Chat</div>
+                      <div className="text-xs font-bold text-white group-hover:text-emerald-300">Teacher: Prof. Elena Davis</div>
+                      <div className="text-[10px] text-slate-400 truncate">prof.davis@campus.edu</div>
                     </button>
 
-                    <button
-                      type="button"
-                      onClick={() => handleQuickDemo('alex.johnson2026@gmail.com', 'Student@Pass2026!')}
-                      className="rounded-xl border border-slate-800 bg-slate-950/70 p-2.5 hover:border-fuchsia-500/40 hover:bg-slate-900 transition text-left group"
-                    >
-                      <div className="text-xs font-bold text-white group-hover:text-fuchsia-300">Mock: Alex Johnson</div>
-                      <div className="text-[10px] text-emerald-400 truncate font-mono">alex...2026@gmail.com</div>
-                    </button>
+                    {[
+                      ['Maya Patel', 'maya.patel@student.campus.edu'],
+                      ['Lucas Kim', 'lucas.kim@student.campus.edu'],
+                    ].map(([name, demoEmail]) => (
+                      <button key={demoEmail} type="button" onClick={() => handleQuickDemo(demoEmail, 'Student@SecurePass2026!')} className="rounded-xl border border-slate-800 bg-slate-950/70 p-2.5 hover:border-cyan-500/40 hover:bg-slate-900 transition text-left group">
+                        <div className="text-xs font-bold text-white group-hover:text-cyan-300">Student: {name}</div>
+                        <div className="text-[10px] text-slate-400 truncate">{demoEmail}</div>
+                      </button>
+                    ))}
                   </div>
+                  <p className="mt-2 text-[10px] text-slate-500">Teacher password: <span className="font-mono text-slate-300">Faculty@SecurePass2026!</span> · Student password: <span className="font-mono text-slate-300">Student@SecurePass2026!</span></p>
                 </div>
               </>
             )}
@@ -368,6 +446,7 @@ export const LoginPage: React.FC = () => {
             {/* ── REGISTER FORM ───────────────────────────────────────────── */}
             {tab === 'register' && (
               <>
+                {registrationComplete && <div role="status" className="mb-4 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 text-xs text-emerald-200">Account created and password verifier stored. You can now sign in using {regEmail.trim().toLowerCase()}. <button type="button" onClick={() => { setEmail(regEmail.trim().toLowerCase()); setTab('login'); }} className="ml-1 font-bold underline">Go to sign in</button></div>}
                 {regError && (
                   <div className="mb-4 flex items-start gap-2 rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-300">
                     <AlertTriangle className="h-4 w-4 shrink-0 text-red-400 mt-0.5" />
@@ -503,6 +582,7 @@ export const LoginPage: React.FC = () => {
         </div>
 
       </div>
+      <SecurityProcessModal process={securityProcess.process} onClose={securityProcess.close} />
     </div>
   );
 };

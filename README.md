@@ -1,3 +1,10 @@
+## | Role | Email | Password |
+## |---|---|---|
+## | Teacher | `dr.chen@campus.edu` | `Faculty@SecurePass2026!` |
+## | Teacher | `prof.davis@campus.edu` | `Faculty@SecurePass2026!` |
+## | Student | `maya.patel@student.campus.edu` | `Student@SecurePass2026!` |
+## | Student | `lucas.kim@student.campus.edu` | `Student@SecurePass2026!` |
+
 # SecureCampus — Cybersecurity Hackathon Demo App
 
 Student-Faculty Management Platform with an interactive **SECURITY ON / OFF Toggle** for live cybersecurity attack & defense demonstrations.
@@ -16,6 +23,26 @@ The system features a centralized server-side flag `SECURITY_MODE` (default: **O
 ---
 
 ## 🚀 How to Run Locally
+
+### One-command setup and launch (macOS / Linux)
+From the project directory, run:
+```bash
+./run.sh
+```
+The launcher checks for Node.js and Python, creates the backend virtual environment, installs missing frontend/backend packages, and starts both services on localhost. It reuses a healthy app already running on the expected ports. Press **Ctrl+C** to stop the services started by the launcher.
+
+## Demo Accounts and Courses
+
+The sign-in page offers two student and two teacher demo accounts. Select a card to sign in, or use these credentials:
+
+| Role | Email | Password |
+| --- | --- | --- |
+| Teacher | `dr.chen@campus.edu` | `Faculty@SecurePass2026!` |
+| Teacher | `prof.davis@campus.edu` | `Faculty@SecurePass2026!` |
+| Student | `maya.patel@student.campus.edu` | `Student@SecurePass2026!` |
+| Student | `lucas.kim@student.campus.edu` | `Student@SecurePass2026!` |
+
+The demo includes five courses: Cybersecurity & Network Defense, Artificial Intelligence & Machine Learning, Business Management & Entrepreneurship, Computer Science & Software Design, and Data Science & Cloud Computing. Teachers can create dated attendance sessions from the Attendance page; each session is attached to the selected course.
 
 ### 1. Run with Docker Compose
 ```bash

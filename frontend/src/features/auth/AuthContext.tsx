@@ -1,12 +1,12 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { User } from '../../types/index.js';
 import { apiRequest } from '../../lib/api.js';
-import { registerSocketUser, subscribeToSecurityStream, setSocketSession, disconnectSocket } from '../../lib/socket.js';
 
 interface AuthContextType {
   user: User | null;
   isLoading: boolean;
-  login: (email: string, pass: string) => Promise<User>;
+  login: (email: string, pass: string, options?: { deferActivation?: boolean }) => Promise<User>;
+  activateUser: (user: User) => void;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
   switchRoleQuick: (email: string, pass: string) => Promise<void>;
@@ -47,26 +47,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setUser(u);
         if (data.sessionId) {
           sessionStorage.setItem('campus_session_id', data.sessionId);
-          setSocketSession(data.sessionId);
         }
         if (data.csrfToken) {
           sessionStorage.setItem('campus_csrf_token', data.csrfToken);
-        }
-        registerSocketUser(u.id);
-        if (u.role === 'admin') {
-          subscribeToSecurityStream();
         }
       } else {
         setUser(null);
         sessionStorage.removeItem('campus_session_id');
         sessionStorage.removeItem('campus_csrf_token');
-        disconnectSocket();
       }
     } catch {
       setUser(null);
       sessionStorage.removeItem('campus_session_id');
       sessionStorage.removeItem('campus_csrf_token');
-      disconnectSocket();
     } finally {
       setIsLoading(false);
     }
@@ -76,8 +69,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     refreshUser();
   }, []);
 
-  const login = async (email: string, pass: string): Promise<User> => {
-    const res = await apiRequest<{ user: any; sessionId: string; csrfToken?: string }>('/api/v1/auth/login', {
+  const login = async (email: string, pass: string, options: { deferActivation?: boolean } = {}): Promise<User> => {
+    sessionStorage.removeItem('campus_message_transport_key');
+    const res = await apiRequest<{ user: any; sessionId: string; csrfToken?: string; securityTrace?: User['securityTrace'] }>('/api/v1/auth/login', {
       method: 'POST',
       body: { email, password: pass },
     });
@@ -90,21 +84,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       studentOrStaffId: res.user.studentOrStaffId,
       department: res.user.department,
       status: res.user.status,
+      securityTrace: res.securityTrace,
     };
-    setUser(u);
+    if (!options.deferActivation) setUser(u);
     if (res.sessionId) {
       sessionStorage.setItem('campus_session_id', res.sessionId);
-      setSocketSession(res.sessionId);
     }
     if (res.csrfToken) {
       sessionStorage.setItem('campus_csrf_token', res.csrfToken);
     }
-    registerSocketUser(u.id);
-    if (u.role === 'admin') {
-      subscribeToSecurityStream();
-    }
     return u;
   };
+
+  const activateUser = (authenticatedUser: User) => setUser(authenticatedUser);
 
   const logout = async () => {
     try {
@@ -114,7 +106,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
     sessionStorage.removeItem('campus_session_id');
     sessionStorage.removeItem('campus_csrf_token');
-    disconnectSocket();
+    sessionStorage.removeItem('campus_message_transport_key');
     setUser(null);
   };
 
@@ -128,7 +120,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, login, logout, refreshUser, switchRoleQuick }}>
+    <AuthContext.Provider value={{ user, isLoading, login, activateUser, logout, refreshUser, switchRoleQuick }}>
       {children}
     </AuthContext.Provider>
   );

@@ -8,6 +8,7 @@ from typing import Dict, List, Optional, Any
 
 from core.security import hash_password
 from core.crypto import compute_attendance_hmac
+from core.security_mode import is_secure
 
 
 def _now_iso() -> str:
@@ -250,8 +251,8 @@ class DatabaseStore:
             {
                 "_id": "cls_cs401",
                 "code": "CS-401",
-                "name": "Network Security & Penetration Testing",
-                "description": "Advanced protocols, packet analysis, vulnerability scanning with OWASP ZAP, threat models, and secure software development lifecycle.",
+                "name": "Cybersecurity & Network Defense",
+                "description": "Network defense, secure authentication, threat modeling, penetration testing, and HMAC-protected attendance.",
                 "semester": "Fall",
                 "academicYear": "2026",
                 "facultyId": "usr_fac_01",
@@ -264,12 +265,12 @@ class DatabaseStore:
             },
             {
                 "_id": "cls_cs420",
-                "code": "CS-420",
-                "name": "Cloud Infrastructure & Defense",
-                "description": "Container security, RBAC policies, infrastructure as code, API threat mitigation and zero-trust college architecture.",
+                "code": "AI-320",
+                "name": "Artificial Intelligence & Machine Learning",
+                "description": "Machine learning fundamentals, neural networks, responsible AI, and applied data projects.",
                 "semester": "Fall",
                 "academicYear": "2026",
-                "facultyId": "usr_fac_01",
+                "facultyId": "usr_fac_02",
                 "credits": 3,
                 "room": "Lovelace Science Ctr 112",
                 "schedule": "Tue/Thu 02:00 PM - 03:30 PM",
@@ -279,9 +280,9 @@ class DatabaseStore:
             },
             {
                 "_id": "cls_se350",
-                "code": "SE-350",
-                "name": "Full-Stack Software Architecture",
-                "description": "Scalable RESTful microservices, state management, testing automation with Vitest, and authenticated web services.",
+                "code": "BUS-210",
+                "name": "Business Management & Entrepreneurship",
+                "description": "Project planning, team leadership, budgeting, operations, and new venture fundamentals.",
                 "semester": "Fall",
                 "academicYear": "2026",
                 "facultyId": "usr_fac_02",
@@ -294,12 +295,12 @@ class DatabaseStore:
             },
             {
                 "_id": "cls_cyb480",
-                "code": "CYB-480",
-                "name": "Applied Cryptography & PKI",
-                "description": "Symmetric & asymmetric cryptography, HMAC canonical message signing, zero-knowledge proofs, and certificate validation.",
+                "code": "CS-220",
+                "name": "Computer Science & Software Design",
+                "description": "Programming, algorithms, data structures, software design, and collaborative application development.",
                 "semester": "Fall",
                 "academicYear": "2026",
-                "facultyId": "usr_fac_03",
+                "facultyId": "usr_fac_01",
                 "credits": 3,
                 "room": "Shannon Cryptography Lab 105",
                 "schedule": "Fri 09:00 AM - 12:00 PM",
@@ -309,12 +310,12 @@ class DatabaseStore:
             },
             {
                 "_id": "cls_cs302",
-                "code": "CS-302",
-                "name": "Operating Systems & Kernel Hardening",
-                "description": "Memory protection, capability-based security, access control lists, and privileged isolation.",
+                "code": "DS-350",
+                "name": "Data Science & Cloud Computing",
+                "description": "Data analysis, visualization, cloud platforms, databases, and practical computing workflows.",
                 "semester": "Fall",
                 "academicYear": "2026",
-                "facultyId": "usr_fac_03",
+                "facultyId": "usr_fac_02",
                 "credits": 4,
                 "room": "Turing Hall 210",
                 "schedule": "Tue/Thu 11:00 AM - 12:30 PM",
@@ -346,27 +347,22 @@ class DatabaseStore:
             {"_id": "enr_15", "classId": "cls_cyb480", "studentId": "usr_stu_05", "enrolledAt": "2026-08-25T13:10:00Z", "status": "enrolled", "createdAt": now, "updatedAt": now},
         ]
 
-        # Enroll 20 Mock Gmail Students in flagship courses
-        for idx, (uid, _, _, _, _) in enumerate(self.mock_gmail_students, 1):
-            self.enrollments.append({
-                "_id": f"enr_mock_{idx:02d}_cs401",
-                "classId": "cls_cs401",
-                "studentId": uid,
-                "enrolledAt": "2026-08-25T10:00:00Z",
-                "status": "enrolled",
-                "createdAt": now,
-                "updatedAt": now,
-            })
-            if idx <= 10:
-                self.enrollments.append({
-                    "_id": f"enr_mock_{idx:02d}_cs420",
-                    "classId": "cls_cs420",
-                    "studentId": uid,
-                    "enrolledAt": "2026-08-25T11:00:00Z",
-                    "status": "enrolled",
-                    "createdAt": now,
-                    "updatedAt": now,
-                })
+        # Keep the five named sample students consistently enrolled in all five
+        # demo courses, so their class list and private attendance view agree.
+        named_students = [f"usr_stu_0{index}" for index in range(1, 6)]
+        existing_enrollments = {(item["classId"], item["studentId"]) for item in self.enrollments}
+        for course in self.classes:
+            for student_id in named_students:
+                if (course["_id"], student_id) not in existing_enrollments:
+                    self.enrollments.append({
+                        "_id": f"enr_{course['_id']}_{student_id}",
+                        "classId": course["_id"],
+                        "studentId": student_id,
+                        "enrolledAt": "2026-08-25T10:00:00Z",
+                        "status": "enrolled",
+                        "createdAt": now,
+                        "updatedAt": now,
+                    })
 
         d1 = "2026-10-15"
         d2 = "2026-10-20"
@@ -402,23 +398,43 @@ class DatabaseStore:
                 "updatedAt": f"{sdate}T12:00:00Z",
             })
 
-        # Add CS-420 sessions
+        # Add Artificial Intelligence course sessions
         self.attendance_sessions.extend([
             {
                 "_id": "ses_cs420_01", "classId": "cls_cs420", "date": "2026-10-20",
-                "title": "Module 04: Zero-Trust Network Microsegmentation",
-                "facultyId": "usr_fac_01", "status": "closed",
-                "sessionCode": "CLD420-OCT20",
+                "title": "Module 04: Neural Networks & Model Evaluation",
+                "facultyId": "usr_fac_02", "status": "closed",
+                "sessionCode": "AI320-OCT20",
                 "createdAt": "2026-10-20T13:50:00Z", "updatedAt": "2026-10-20T16:00:00Z",
             },
             {
                 "_id": "ses_cs420_02", "classId": "cls_cs420", "date": "2026-10-29",
-                "title": "Module 05: Kubernetes RBAC & Admission Controllers",
-                "facultyId": "usr_fac_01", "status": "open",
-                "sessionCode": "CLD420-OCT29",
+                "title": "Module 05: Responsible AI & ML Pipelines",
+                "facultyId": "usr_fac_02", "status": "open",
+                "sessionCode": "AI320-OCT29",
                 "createdAt": "2026-10-29T13:50:00Z", "updatedAt": now,
             },
         ])
+
+        # Seed two complete attendance sessions for each remaining course.
+        # Every session has records for all five named sample students.
+        for class_id, faculty_id, code, topic in [
+            ("cls_se350", "usr_fac_02", "BUS210", "Business planning & team leadership"),
+            ("cls_cyb480", "usr_fac_01", "CS220", "Algorithms & software design"),
+            ("cls_cs302", "usr_fac_02", "DS350", "Data analysis & cloud platforms"),
+        ]:
+            for index, (date, status) in enumerate((("2026-10-24", "closed"), ("2026-10-30", "open")), 1):
+                self.attendance_sessions.append({
+                    "_id": f"ses_{code.lower()}_{index:02d}",
+                    "classId": class_id,
+                    "date": date,
+                    "title": f"Session {index}: {topic}",
+                    "facultyId": faculty_id,
+                    "status": status,
+                    "sessionCode": f"{code}-{date.replace('-', '')}",
+                    "createdAt": f"{date}T09:00:00Z",
+                    "updatedAt": now,
+                })
 
         def _rec(rid, sid, cls_id, stu_id, status, marked_at, date, **kwargs):
             r = {
@@ -435,19 +451,15 @@ class DatabaseStore:
         self.attendance_records = []
         rec_counter = 1
 
-        # All enrolled students in CS-401 (seed students + 20 mock students)
-        all_cs401_student_ids = ["usr_stu_01", "usr_stu_02", "usr_stu_03", "usr_stu_04", "usr_stu_05"] + [
-            m[0] for m in self.mock_gmail_students
-        ]
+        # The class roster uses the five named student demonstrations; mock
+        # security-test identities remain un-enrolled and do not crowd attendance.
+        all_cs401_student_ids = ["usr_stu_01", "usr_stu_02", "usr_stu_03", "usr_stu_04", "usr_stu_05"]
 
-        # 3 Deliberately Tampered Records for demonstration:
-        # 1. usr_stu_07 (Alex Johnson) on Lecture 06 (2026-10-14)
-        # 2. usr_stu_08 (Sophia Martinez) on Lecture 08 (2026-10-19)
-        # 3. usr_stu_09 (Liam Patel) on Lecture 10 (2026-10-23)
+        # Three deliberately tampered records for the HMAC verification demo.
         TAMPER_TARGETS = {
-            ("ses_cs401_06", "usr_stu_07"): ("present", "absent"),  # displayed: present, signed: absent
-            ("ses_cs401_08", "usr_stu_08"): ("present", "absent"),
-            ("ses_cs401_10", "usr_stu_09"): ("present", "absent"),
+            ("ses_cs401_06", "usr_stu_02"): ("present", "absent"),  # displayed: present, signed: absent
+            ("ses_cs401_08", "usr_stu_03"): ("present", "absent"),
+            ("ses_cs401_10", "usr_stu_05"): ("present", "absent"),
         }
 
         for sid, sdate, _ in OCT_10_SESSIONS:
@@ -487,6 +499,24 @@ class DatabaseStore:
                         _rec(rid, sid, "cls_cs401", stu_id, status, marked_at, sdate)
                     )
                 rec_counter += 1
+
+        for session in self.attendance_sessions:
+            if session["classId"] == "cls_cs401":
+                continue
+            course = next(c for c in self.classes if c["_id"] == session["classId"])
+            for index, student_id in enumerate(all_cs401_student_ids):
+                status = ("present", "late", "absent", "present", "present")[(index + len(session["_id"])) % 5]
+                marked_at = f"{session['date']}T10:{index:02d}:00Z"
+                self.attendance_records.append(_rec(
+                    f"rec_{session['_id']}_{student_id}",
+                    session["_id"],
+                    session["classId"],
+                    student_id,
+                    status,
+                    marked_at,
+                    session["date"],
+                    markedBy=course["facultyId"],
+                ))
 
         self.projects = [
             {
@@ -605,6 +635,16 @@ class DatabaseStore:
                 "readBy": ["usr_stu_02", "usr_stu_03"],
             },
         ]
+
+        # Demo chat fixtures follow the same storage rules as live messages.
+        if is_secure():
+            import html
+            from core.chat_crypto import encrypt_chat_message
+            from core.message_security import seal_message
+
+            for message in self.messages:
+                message["content"] = encrypt_chat_message(html.escape(message["content"]))
+                message.update(seal_message(message))
 
         self.notifications = [
             {
@@ -813,7 +853,7 @@ class DatabaseStore:
         ]
 
         self.sessions = {}
-        print("[SecureCampus] Demo dataset seeded: 10 users, 5 classes, 15 enrollments, 5 sessions, 19 HMAC records.")
+        print(f"[SecureCampus] Demo dataset seeded: {len(self.users)} users, {len(self.classes)} courses, {len(self.enrollments)} enrollments, {len(self.attendance_sessions)} sessions, {len(self.attendance_records)} attendance records.")
 
     # ── Helpers ──────────────────────────────────────────────────────────────
 

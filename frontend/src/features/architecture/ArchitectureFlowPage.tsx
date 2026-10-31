@@ -425,15 +425,15 @@ const FlowCanvasInner: React.FC<ArchitectureFlowPageProps> = ({ isStandalone = f
       if (actionType === 'verify_hmac') {
         const res = await apiRequest('/api/v1/attendance/verify', { method: 'POST' });
         setTestNotificationStatus(
-          `Real HMAC Sweep Complete: ${res.data?.verifiedValid}/${res.data?.totalChecked} verified valid. Status: ${res.data?.status}`
+          `Real HMAC Sweep Complete: ${res.verifiedValid}/${res.totalChecked} verified valid. Status: ${res.status}`
         );
       } else if (actionType === 'simulate_tamper') {
         // Attendance tamper probe: simulate status alteration and immediately execute HMAC verification
         const simRes = await apiRequest<any>('/api/v1/attendance/simulate-tampering', { method: 'POST' });
         const sweepRes = await apiRequest<any>('/api/v1/attendance/verify', { method: 'POST' });
-        const count = sweepRes.data?.tamperedCount ?? sweepRes.tamperedCount ?? 0;
+        const count = sweepRes.tamperedCount ?? 0;
         setTestNotificationStatus(
-          `🚨 Tamper Simulation & Verification Complete: Modified record ${simRes.data?.recordId || ''} directly. Immediate HMAC verification sweep detected ${count} tampered record(s) and logged to SQLite attendance_tamper_logs!`
+          `🚨 Tamper Simulation & Verification Complete: Modified record ${simRes.recordId || ''} directly. Immediate HMAC verification sweep detected ${count} tampered record(s) and logged to SQLite attendance_tamper_logs!`
         );
       } else if (actionType === 'simulate_sqli') {
         const res = await apiRequest('/api/v1/sqli-lab/search', {
@@ -444,13 +444,13 @@ const FlowCanvasInner: React.FC<ArchitectureFlowPageProps> = ({ isStandalone = f
           `Parameterized SQL Query Defense Executed: ${res.rows?.length || 0} rows safely bound in ${res.executionTimeMs}ms.`
         );
       } else if (actionType === 'simulate_brute_force') {
-        const res = await apiRequest('/api/v1/security/simulate-attack', {
+        const res = await apiRequest('/api/v1/security-events/simulate-attack', {
           method: 'POST',
           body: { type: 'brute_force' },
         });
         setTestNotificationStatus(res.message);
       } else if (actionType === 'simulate_csrf') {
-        const res = await apiRequest('/api/v1/security/simulate-attack', {
+        const res = await apiRequest('/api/v1/security-events/simulate-attack', {
           method: 'POST',
           body: { type: 'csrf_tamper' },
         });

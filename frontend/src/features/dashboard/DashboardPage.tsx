@@ -45,12 +45,12 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ setActiveTab }) =>
       setLoading(true);
       try {
         if (user?.role === 'admin') {
-          const stats = await apiRequest('/api/v1/security/stats');
+          const stats = await apiRequest('/api/v1/security-events/stats');
           const cls = await apiRequest('/api/v1/classes');
           setAdminStats(stats);
           setClasses(cls || []);
         } else if (user?.role === 'student') {
-          const att = await apiRequest('/api/v1/attendance/my');
+          const att = await apiRequest('/api/v1/attendance/my-records');
           const cls = await apiRequest('/api/v1/classes');
           const proj = await apiRequest('/api/v1/projects');
           setStudentSummary(att);
